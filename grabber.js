@@ -13,11 +13,13 @@ class ImageGrabber {
   loadConfig() {
     try {
       const configPath = path.join(__dirname, 'config.json');
-      return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (fs.existsSync(configPath)) {
+        return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      }
     } catch (error) {
-      console.error('加载配置失败，使用默认配置');
-      return this.getDefaultConfig();
+      console.error('加载配置失败:', error);
     }
+    return this.getDefaultConfig();
   }
 
   getDefaultConfig() {
@@ -33,29 +35,35 @@ class ImageGrabber {
     };
   }
 
-  getConfig() { return this.config; }
-  getLastUpdate() { return this.lastUpdate; }
-  getCacheSize() { return this.cache.size; }
+  getConfig() { 
+    return this.config; 
+  }
 
   isEnabled() {
-    return this.config.enabled;
+    return this.config.enabled === true;
   }
 
   async addImageToText(text) {
-    if (!this.isEnabled() || !text) return text;
+    if (!this.isEnabled() || !text || typeof text !== 'string') {
+      return text;
+    }
     
     try {
       const imageUrl = await this.getRandomImage();
-      return imageUrl ? this.insertImage(text, imageUrl) : text;
+      if (imageUrl) {
+        return this.insertImage(text, imageUrl);
+      }
     } catch (error) {
       console.error('图片抓取失败:', error);
-      return text;
     }
+    
+    return text;
   }
 
   async getRandomImage() {
     const cacheKey = this.config.targetWebsite;
     
+    // 检查缓存
     if (this.cache.has(cacheKey)) {
       const cached = this.cache.get(cacheKey);
       if (Date.now() - cached.timestamp < (this.config.cacheDuration || 300000)) {
@@ -63,18 +71,27 @@ class ImageGrabber {
       }
     }
 
-    const images = await this.scrapeImages();
-    this.cache.set(cacheKey, { images, timestamp: Date.now() });
-    this.lastUpdate = new Date();
-    
-    return this.selectRandomImage(images);
+    // 抓取新图片
+    try {
+      const images = await this.scrapeImages();
+      this.cache.set(cacheKey, { 
+        images, 
+        timestamp: Date.now() 
+      });
+      this.lastUpdate = new Date();
+      
+      return this.selectRandomImage(images);
+    } catch (error) {
+      console.error('抓取图片失败:', error);
+      return null;
+    }
   }
 
   async scrapeImages() {
     const response = await axios.get(this.config.targetWebsite, {
       timeout: this.config.requestTimeout || 5000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': this.config.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
     
@@ -92,24 +109,37 @@ class ImageGrabber {
   }
 
   isValidImage(src) {
+    if (!src) return false;
+    
     const lowerSrc = src.toLowerCase();
     const excluded = this.config.excludeKeywords || [];
     
-    return !excluded.some(keyword => 
-      lowerSrc.includes(keyword.toLowerCase())
-    ) && /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(src);
+    // 检查排除关键词
+    if (excluded.some(keyword => lowerSrc.includes(keyword.toLowerCase()))) {
+      return false;
+    }
+    
+    // 检查图片格式
+    return /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(src);
   }
 
   makeAbsoluteUrl(src) {
     const baseUrl = this.config.targetWebsite;
-    if (src.startsWith('//')) return 'https:' + src;
-    if (src.startsWith('/')) return new URL(src, baseUrl).href;
-    if (!src.startsWith('http')) return new URL(src, baseUrl).href;
+    
+    if (src.startsWith('//')) {
+      return 'https:' + src;
+    } else if (src.startsWith('/')) {
+      return new URL(src, baseUrl).href;
+    } else if (!src.startsWith('http')) {
+      return new URL(src, baseUrl).href;
+    }
+    
     return src;
   }
 
   selectRandomImage(images) {
-    return images.length > 0 ? images[Math.floor(Math.random() * images.length)] : null;
+    if (!images || images.length === 0) return null;
+    return images[Math.floor(Math.random() * images.length)];
   }
 
   insertImage(text, imageUrl) {
@@ -121,6 +151,7 @@ class ImageGrabber {
       return text.replace(position, `$1$2${imageHtml}`);
     }
     
+    // 默认插入到文本末尾
     return text + imageHtml;
   }
 
@@ -149,7 +180,7 @@ class ImageGrabber {
       const response = await axios.get(config.targetWebsite, {
         timeout: config.requestTimeout,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          'User-Agent': config.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
       });
       
@@ -167,22 +198,6 @@ class ImageGrabber {
     } catch (error) {
       throw new Error(`连接测试失败: ${error.message}`);
     }
-  }
-
-  isValidImage(src, excludeKeywords) {
-    const lowerSrc = src.toLowerCase();
-    const excluded = excludeKeywords || [];
-    
-    return !excluded.some(keyword => 
-      lowerSrc.includes(keyword.toLowerCase())
-    ) && /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(src);
-  }
-
-  makeAbsoluteUrl(src, baseUrl) {
-    if (src.startsWith('//')) return 'https:' + src;
-    if (src.startsWith('/')) return new URL(src, baseUrl).href;
-    if (!src.startsWith('http')) return new URL(src, baseUrl).href;
-    return src;
   }
 
   updateConfig(newConfig) {
