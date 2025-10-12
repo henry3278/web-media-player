@@ -1,5 +1,5 @@
 (function() {
-    console.log('🎯 媒体播放器插件加载...');
+    console.log('🖼️ 媒体播放器插件加载...');
 
     // 配置
     let config = {
@@ -9,14 +9,8 @@
             'https://picsum.photos/300/200?1',
             'https://picsum.photos/300/200?2',
             'https://picsum.photos/300/200?3'
-        ]
-    };
-
-    // 正则表达式模式
-    const patterns = {
-        messageId: /^mes_(\d+)$/, // 匹配消息ID格式 mes_123
-        aiMessage: /mes_(?!.*mes_user)/, // 匹配AI消息（不包含mes_user）
-        imageUrl: /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i // 匹配图片URL
+        ],
+        imageStyle: 'modern' // modern, simple, classic
     };
 
     // 创建设置面板
@@ -30,21 +24,37 @@
                 
                 const html = `
                     <div class="list-group-item">
-                        <h5>🎯 媒体播放器 (正则优化版)</h5>
+                        <h5>🖼️ 媒体播放器 (URL列表版)</h5>
                         <div class="form-group">
                             <label><input type="checkbox" id="media-enabled" ${config.enabled ? 'checked' : ''}> 启用插件</label>
                         </div>
                         <div class="form-group">
                             <label><input type="checkbox" id="media-auto" ${config.autoInsert ? 'checked' : ''}> AI回复自动插入</label>
                         </div>
+                        
+                        <div class="form-group">
+                            <label>图片样式:</label>
+                            <select class="form-control" id="media-style">
+                                <option value="modern" ${config.imageStyle === 'modern' ? 'selected' : ''}>现代风格</option>
+                                <option value="simple" ${config.imageStyle === 'simple' ? 'selected' : ''}>简约风格</option>
+                                <option value="classic" ${config.imageStyle === 'classic' ? 'selected' : ''}>经典风格</option>
+                            </select>
+                        </div>
+                        
                         <div class="form-group">
                             <label>图片URL列表 (每行一个):</label>
-                            <textarea class="form-control" id="media-urls" rows="3" style="font-family: monospace; font-size: 12px;">${config.imageUrls.join('\n')}</textarea>
+                            <textarea class="form-control" id="media-urls" rows="6" style="font-family: monospace; font-size: 12px;" placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.png">${config.imageUrls.join('\n')}</textarea>
+                            <small class="form-text text-muted">支持: jpg, png, gif, webp 格式</small>
                         </div>
-                        <button class="btn btn-sm btn-primary" id="media-test">测试插入</button>
-                        <button class="btn btn-sm btn-secondary" id="media-debug">调试信息</button>
+                        
+                        <div class="btn-group w-100">
+                            <button class="btn btn-sm btn-primary" id="media-test">测试插入</button>
+                            <button class="btn btn-sm btn-success" id="media-add-example">添加示例</button>
+                            <button class="btn btn-sm btn-info" id="media-preview">预览样式</button>
+                        </div>
+                        
                         <div id="media-status" style="margin-top: 10px; font-size: 12px;"></div>
-                        <div id="media-debug-info" style="display: none; margin-top: 10px; background: #f5f5f5; padding: 10px; border-radius: 5px; font-size: 11px;"></div>
+                        <div id="media-preview-area" style="margin-top: 10px;"></div>
                     </div>
                 `;
                 
@@ -61,52 +71,140 @@
                     updateStatus(`自动插入已${config.autoInsert ? '开启' : '关闭'}`);
                 });
                 
+                document.getElementById('media-style').addEventListener('change', function() {
+                    config.imageStyle = this.value;
+                    updateStatus(`样式设置为: ${this.options[this.selectedIndex].text}`);
+                });
+                
                 document.getElementById('media-urls').addEventListener('input', function() {
                     config.imageUrls = this.value.split('\n').filter(url => url.trim());
                 });
                 
                 document.getElementById('media-test').addEventListener('click', testInsert);
-                document.getElementById('media-debug').addEventListener('click', showDebugInfo);
+                document.getElementById('media-add-example').addEventListener('click', addExampleUrls);
+                document.getElementById('media-preview').addEventListener('click', previewStyle);
                 
                 console.log('✅ 设置面板创建完成');
             }
         }, 100);
     }
 
-    // 使用正则提取消息ID
-    function extractMessageId(elementId) {
-        const match = elementId.match(patterns.messageId);
-        return match ? match[1] : null;
-    }
-
-    // 使用正则检查是否为AI消息
-    function isAIMessage(messageElement) {
-        const htmlContent = messageElement.outerHTML;
-        return !patterns.aiMessage.test(htmlContent) && patterns.messageId.test(messageElement.id);
-    }
-
-    // 查找所有消息元素
-    function findAllMessages() {
-        const allElements = document.querySelectorAll('[id^="mes_"]');
-        const messages = Array.from(allElements).filter(el => patterns.messageId.test(el.id));
-        console.log(`找到 ${messages.length} 条消息`);
-        return messages;
-    }
-
-    // 查找最新的AI消息
-    function findLatestAIMessage() {
-        const messages = findAllMessages();
+    // 添加示例URL
+    function addExampleUrls() {
+        const exampleUrls = [
+            'https://picsum.photos/300/200?random=1',
+            'https://picsum.photos/300/200?random=2',
+            'https://picsum.photos/300/200?random=3',
+            'https://picsum.photos/400/300?random=4',
+            'https://picsum.photos/500/400?random=5'
+        ];
         
-        for (let i = messages.length - 1; i >= 0; i--) {
-            if (isAIMessage(messages[i])) {
-                const messageId = extractMessageId(messages[i].id);
-                console.log('找到AI消息:', messageId);
-                return { element: messages[i], id: messageId };
-            }
+        const textarea = document.getElementById('media-urls');
+        const currentUrls = textarea.value.split('\n').filter(url => url.trim());
+        const allUrls = [...currentUrls, ...exampleUrls];
+        textarea.value = allUrls.join('\n');
+        config.imageUrls = allUrls;
+        
+        updateStatus('✅ 已添加示例URL');
+    }
+
+    // 预览样式
+    function previewStyle() {
+        if (config.imageUrls.length === 0) {
+            updateStatus('❌ 请先添加图片URL', true);
+            return;
         }
         
-        console.log('未找到AI消息');
-        return null;
+        const randomUrl = config.imageUrls[Math.floor(Math.random() * config.imageUrls.length)];
+        const previewArea = document.getElementById('media-preview-area');
+        
+        const previewHtml = `
+            <div style="border: 2px solid #007bff; padding: 15px; border-radius: 8px; background: #f8f9fa;">
+                <h6>样式预览:</h6>
+                <div id="style-preview-container" style="text-align: center;"></div>
+                <div style="font-size: 11px; color: #666; margin-top: 10px;">URL: ${randomUrl}</div>
+            </div>
+        `;
+        
+        previewArea.innerHTML = previewHtml;
+        
+        // 创建预览图片
+        createImageElement(randomUrl, 'style-preview-container', true);
+    }
+
+    // 根据样式创建图片元素
+    function createImageElement(url, containerId, isPreview = false) {
+        const container = document.getElementById(containerId);
+        if (!container) return null;
+        
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = 'AI回复图片';
+        
+        // 应用样式
+        applyImageStyle(img, config.imageStyle, isPreview);
+        
+        // 点击打开原图
+        img.addEventListener('click', function() {
+            window.open(url, '_blank');
+        });
+        
+        // 加载处理
+        img.addEventListener('load', function() {
+            console.log('图片加载成功:', url);
+            if (isPreview) {
+                updateStatus('✅ 预览图片加载成功');
+            }
+        });
+        
+        img.addEventListener('error', function() {
+            console.error('图片加载失败:', url);
+            this.style.opacity = '0.3';
+            this.style.borderColor = 'red';
+            if (isPreview) {
+                updateStatus('❌ 预览图片加载失败', true);
+            }
+        });
+        
+        container.appendChild(img);
+        return img;
+    }
+
+    // 应用图片样式
+    function applyImageStyle(img, style, isPreview = false) {
+        const baseSize = isPreview ? '200px' : '300px';
+        
+        switch(style) {
+            case 'modern':
+                img.style.maxWidth = baseSize;
+                img.style.maxHeight = '250px';
+                img.style.borderRadius = '15px';
+                img.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
+                img.style.border = '2px solid #e0e0e0';
+                img.style.cursor = 'pointer';
+                img.style.transition = 'all 0.3s ease';
+                break;
+                
+            case 'simple':
+                img.style.maxWidth = baseSize;
+                img.style.maxHeight = '200px';
+                img.style.borderRadius = '8px';
+                img.style.border = '1px solid #ddd';
+                break;
+                
+            case 'classic':
+                img.style.maxWidth = baseSize;
+                img.style.maxHeight = '220px';
+                img.style.borderRadius = '5px';
+                img.style.border = '3px solid #8B4513';
+                img.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+                break;
+        }
+        
+        img.style.marginTop = '10px';
+        img.style.display = 'block';
+        img.style.marginLeft = 'auto';
+        img.style.marginRight = 'auto';
     }
 
     // 更新状态显示
@@ -117,31 +215,15 @@
         }
     }
 
-    // 显示调试信息
-    function showDebugInfo() {
-        const messages = findAllMessages();
-        const aiMessage = findLatestAIMessage();
-        
-        const debugInfo = {
-            '总消息数': messages.length,
-            '最新AI消息': aiMessage ? aiMessage.id : '未找到',
-            '启用状态': config.enabled,
-            '自动插入': config.autoInsert,
-            '图片URL数量': config.imageUrls.length,
-            '消息ID示例': messages.slice(0, 3).map(m => m.id)
-        };
-        
-        const debugEl = document.getElementById('media-debug-info');
-        debugEl.style.display = 'block';
-        debugEl.innerHTML = `<pre>${JSON.stringify(debugInfo, null, 2)}</pre>`;
-    }
-
     // 获取随机图片URL
     function getRandomImageUrl() {
         if (!config.imageUrls || config.imageUrls.length === 0) {
             return null;
         }
-        const validUrls = config.imageUrls.filter(url => patterns.imageUrl.test(url));
+        // 过滤有效的图片URL
+        const validUrls = config.imageUrls.filter(url => 
+            url.match(/\.(jpeg|jpg|gif|png|webp|bmp)(\?.*)?$/i)
+        );
         return validUrls.length > 0 ? validUrls[Math.floor(Math.random() * validUrls.length)] : null;
     }
 
@@ -160,12 +242,6 @@
         
         console.log('尝试插入图片到消息:', messageId);
         
-        // 使用正则验证消息ID格式
-        if (!patterns.messageId.test(`mes_${messageId}`)) {
-            console.log('无效的消息ID格式:', messageId);
-            return false;
-        }
-        
         // 查找消息元素
         const messageElement = document.getElementById(`mes_${messageId}`);
         if (!messageElement) {
@@ -173,40 +249,36 @@
             return false;
         }
         
-        // 查找消息文本区域 - 使用更灵活的选择器
-        let messageTextElement = messageElement.querySelector('.mes_text');
+        // 查找消息文本区域
+        const messageTextElement = messageElement.querySelector('.mes_text');
         if (!messageTextElement) {
-            // 备用方案：查找包含文本的子元素
-            messageTextElement = messageElement.querySelector('[class*="text"], [class*="content"]');
-            if (!messageTextElement) {
-                messageTextElement = messageElement;
-            }
+            console.log('找不到消息文本区域');
+            return false;
         }
         
-        // 创建图片元素
+        // 创建容器
+        const container = document.createElement('div');
+        container.className = 'media-insert-container';
+        container.style.textAlign = 'center';
+        container.style.marginTop = '15px';
+        container.style.marginBottom = '10px';
+        
+        // 创建图片
         const img = document.createElement('img');
         img.src = imageUrl;
         img.alt = 'AI回复图片';
-        img.style.maxWidth = '300px';
-        img.style.maxHeight = '200px';
-        img.style.borderRadius = '5px';
-        img.style.marginTop = '10px';
-        img.style.display = 'block';
-        img.style.border = '1px solid #ddd';
         
-        // 设置加载错误处理
-        img.onerror = function() {
-            console.error('图片加载失败:', imageUrl);
+        // 应用样式
+        applyImageStyle(img, config.imageStyle);
+        
+        // 加载处理
+        img.addEventListener('error', function() {
             this.style.opacity = '0.3';
             this.style.borderColor = 'red';
-        };
+        });
         
-        img.onload = function() {
-            console.log('图片加载成功:', imageUrl);
-        };
-        
-        // 插入到消息文本区域
-        messageTextElement.appendChild(img);
+        container.appendChild(img);
+        messageTextElement.appendChild(container);
         
         console.log('✅ 图片插入成功');
         return true;
@@ -221,15 +293,31 @@
             return;
         }
         
-        const aiMessage = findLatestAIMessage();
+        if (config.imageUrls.length === 0) {
+            updateStatus('❌ 请先添加图片URL', true);
+            return;
+        }
         
-        if (aiMessage) {
-            const success = insertImageToMessage(aiMessage.id);
+        // 查找最新的AI消息
+        const messages = document.querySelectorAll('.mes');
+        let lastAIMessage = null;
+        
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (!messages[i].querySelector('.mes_user')) {
+                lastAIMessage = messages[i];
+                break;
+            }
+        }
+        
+        if (lastAIMessage) {
+            const messageId = lastAIMessage.id.replace('mes_', '');
+            const success = insertImageToMessage(messageId);
+            
             if (success) {
                 updateStatus('✅ 测试插入成功！');
-                aiMessage.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                lastAIMessage.scrollIntoView({ behavior: 'smooth' });
             } else {
-                updateStatus('❌ 插入失败，请查看控制台', true);
+                updateStatus('❌ 插入失败', true);
             }
         } else {
             updateStatus('❌ 找不到AI回复消息', true);
@@ -246,10 +334,11 @@
             
             mutations.forEach(function(mutation) {
                 mutation.addedNodes.forEach(function(node) {
-                    if (node.nodeType === 1 && node.id && patterns.messageId.test(node.id)) {
+                    if (node.nodeType === 1 && node.id && node.id.startsWith('mes_')) {
                         setTimeout(() => {
-                            if (isAIMessage(node)) {
-                                const messageId = extractMessageId(node.id);
+                            // 检查是否为AI消息（没有mes_user类）
+                            if (!node.querySelector('.mes_user')) {
+                                const messageId = node.id.replace('mes_', '');
                                 console.log('检测到新AI消息:', messageId);
                                 insertImageToMessage(messageId);
                             }
@@ -264,7 +353,7 @@
             subtree: true
         });
         
-        console.log('✅ DOM监听器已启动');
+        console.log('✅ 自动插入监听已启动');
     }
 
     // 初始化插件
