@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "targetWebsites": [
+    "https://www.kchai.org/"
+  ],
+  "mediaTypes": ["image", "video"],
+  "imageSelectors": ["img", "img[src*=\".jpg\"]", "img[src*=\".png\"]"],
+  "videoSelectors": ["video", "source[type*=\"video\"]"],
+  "excludeKeywords": ["icon", "logo", "ad", "spacer"],
+  "fileExtensions": {
+    "images": [".jpg", ".jpeg", ".png", ".webp", ".gif"],
+    "videos": [".mp4", ".webm", ".ogg", ".mov"]
+  },
+  "maxMediaPerPage": 30,
+  "requestTimeout": 8000,
+  "cacheDuration": 600000,
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  "debug": false
+}
