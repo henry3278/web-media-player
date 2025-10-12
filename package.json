@@ -1,16 +1,15 @@
 {
   "name": "ai-tavern-image-grabber-simple",
-  "version": "3.0.0",
-  "description": "AI云酒馆图片抓取插件 - 无管理面板版",
+  "version": "3.0.0", 
+  "description": "AI云酒馆图片抓取插件 - 包含Manifest版",
   "main": "installer.js",
   "bin": {
     "install-tavern-image-grabber-simple": "./installer.js"
   },
   "scripts": {
-    "install": "node installer.js",
-    "config": "echo '编辑 config.js 文件修改配置'"
+    "install": "node installer.js"
   },
-  "keywords": ["ai", "tavern", "image", "grabber", "simple", "no-admin"],
+  "keywords": ["ai", "tavern", "image", "grabber", "simple", "manifest"],
   "author": "AI云酒馆",
   "license": "MIT",
   "dependencies": {},
