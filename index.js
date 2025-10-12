@@ -1,7 +1,7 @@
-// 文件名: index.js (专业版 v7.0.2 - 修复懒加载与Referer)
+// 文件名: index.js (专业版 v7.0.3 - 修复致命BUG)
 (function () {
     const extensionName = 'web-media-player';
-    const extensionVersion = '7.0.2';
+    const extensionVersion = '7.0.3';
 
     // ... (默认设置等内容保持不变) ...
     const defaultSettings = { enabled: true, sourceUrl: '', mediaType: 'image', autoInsert: true, randomPick: true, maxWidth: '80%', maxHeight: '450px', borderRadius: '8px', showBorder: true, testKeyword: '测试', useProxy: true, };
@@ -9,7 +9,7 @@
     let mediaCache = [];
 
     /**
-     * 核心采集函数 - 【【【 重大修改 】】】
+     * 核心采集函数 - 【【【 重大修改：修复BUG 】】】
      */
     async function fetchMediaUrlsFromSource() {
         if (!settings.sourceUrl) {
@@ -17,13 +17,18 @@
         }
 
         const debugInfo = $('#wmp-debug-info');
+        const finalUrl = settings.sourceUrl;
+
+        // 【【【 BUG修复：将变量声明移到外部 】】】
         let requestUrl;
-        let finalUrl = settings.sourceUrl;
+        let fetchOptions = {}; // 声明一个空对象，用于存放fetch的配置
 
         try {
             // 构造请求
             if (settings.useProxy) {
-                const proxyRequest = {
+                requestUrl = '/api/proxy';
+                // 为 fetchOptions 填充代理请求的配置
+                fetchOptions = {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -33,32 +38,30 @@
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
                             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
                             'Accept-Language': 'en-US,en;q=0.9',
-                            // 【【【 新增功能：伪造 Referer 头 】】】
-                            // 告诉目标服务器，我们的请求是从它自己的页面发起的。
                             'Referer': new URL(finalUrl).origin,
                         }
                     })
                 };
-                requestUrl = '/api/proxy';
                 debugInfo.html(`ℹ️ 调试信息：<br>模式: 代理<br>请求URL: ${finalUrl}<br>Referer: ${new URL(finalUrl).origin}`).show();
                 console.log(`[${extensionName}] 通过代理采集媒体 (带Referer): ${finalUrl}`);
             } else {
-                // ... (直接请求部分保持不变) ...
                 requestUrl = finalUrl;
+                // 对于直接请求，fetchOptions 保持为空对象即可
                 debugInfo.html(`ℹ️ 调试信息：<br>模式: 直接请求<br>请求URL: ${finalUrl}`).show();
                 console.log(`[${extensionName}] 直接采集媒体: ${finalUrl}`);
             }
 
-            // 发送请求
-            const response = await fetch(requestUrl, settings.useProxy ? proxyRequest : {});
+            // 【【【 BUG修复：使用统一的变量 】】】
+            // 发送请求，第二个参数统一使用 fetchOptions
+            const response = await fetch(requestUrl, fetchOptions);
 
             // 检查响应状态
             if (!response.ok) {
                 if (response.status === 404) {
-                    throw new Error(`HTTP错误: 404 (找不到页面)。请确认“资源网址”无误，且目标网站没有更强的反爬虫机制。`);
+                    throw new Error(`HTTP错误: 404 (找不到页面)。请检查“资源网址”是否正确。`);
                 }
                 if (response.status === 403) {
-                    throw new Error(`HTTP错误: 403 (禁止访问)。目标网站拒绝了我们的请求，可能是因为更强的反爬虫保护。`);
+                    throw new Error(`HTTP错误: 403 (禁止访问)。目标网站有反爬虫保护。`);
                 }
                 throw new Error(`HTTP错误: ${response.status}`);
             }
@@ -72,32 +75,25 @@
             const doc = parser.parseFromString(html, 'text/html');
 
             let mediaUrls = [];
-
-            // 【【【 修改：优化解析逻辑 】】】
-            // 针对懒加载和多种可能的src属性进行更稳健的解析
-            const selector = 'img'; // 你可以根据目标网站的结构，使用更精确的选择器，例如 '.gallery-item img'
+            const selector = 'img';
             const elements = doc.querySelectorAll(selector);
             
             console.log(`[${extensionName}] 在页面上找到了 ${elements.length} 个 <img> 标签。`);
 
             elements.forEach(img => {
-                // 优先从 data-src, data-original, data-lazy-src 等常见懒加载属性中获取
                 const lazySrc = img.dataset.src || img.dataset.original || img.dataset.lazySrc;
                 const normalSrc = img.src;
                 let src = lazySrc || normalSrc;
 
                 if (src) {
-                    // 过滤掉无效的占位符链接
                     if (src.startsWith('data:image/') || src.includes('placeholder')) {
-                        return; // 跳过这个占位符图片
+                        return;
                     }
-                    // 将相对路径转换为绝对路径
                     const absoluteUrl = new URL(src, finalUrl).href;
                     mediaUrls.push(absoluteUrl);
                 }
             });
 
-            // 视频部分的逻辑保持不变
             if (settings.mediaType === 'video' || settings.mediaType === 'both') {
                 const videoElements = doc.querySelectorAll('video, source');
                 videoElements.forEach(element => {
@@ -109,7 +105,6 @@
                 });
             }
 
-            // 去重并过滤
             const uniqueUrls = [...new Set(mediaUrls)];
             return uniqueUrls.filter(url => url && url.startsWith('http'));
 
@@ -121,7 +116,7 @@
     }
 
     // ... (其他所有函数，如 addSettingsPanel, addSettingsEventListeners 等都保持不变) ...
-    // 为保持代码简洁，这里省略了未改动的函数，请使用你已有的 7.0.1 版本中的对应函数。
+    // 为保持代码简洁，这里省略了未改动的函数，请使用你已有的 7.0.2 版本中的对应函数。
     // 下面是完整的、未省略的函数列表，以供你复制粘贴。
 
     function addSettingsPanel() { const settingsHtml = ` <div class="list-group-item" id="web-media-player-settings"> <div class="d-flex w-100 justify-content-between"> <h5 class="mb-1">🎨 网络媒体播放器 Pro</h5> <small>v${extensionVersion}</small> </div> <p class="mb-2 text-muted">AI回复时自动插入网络媒体，支持图片和视频</p> <div class="wmp-collapsible active">⚙️ 基础设置</div> <div class="wmp-collapsible-content" style="display: block;"> <div class="form-group"> <label for="wmp-enabled">启用插件</label> <input type="checkbox" id="wmp-enabled" ${settings.enabled ? 'checked' : ''}> </div> <div class="form-group"> <label for="wmp-sourceUrl">🔗 资源网址</label> <input type="text" id="wmp-sourceUrl" class="form-control" value="${settings.sourceUrl}" placeholder="例如: https://example.com/gallery"> <small class="form-text text-muted">包含图片/视频的网页地址</small> </div> <div class="form-group"> <label for="wmp-mediaType">📺 媒体类型</label> <select id="wmp-mediaType" class="form-control"> <option value="image" ${settings.mediaType === 'image' ? 'selected' : ''}>仅图片</option> <option value="video" ${settings.mediaType === 'video' ? 'selected' : ''}>仅视频</option> <option value="both" ${settings.mediaType === 'both' ? 'selected' : ''}>图片和视频</option> </select> </div> <div class="form-group"> <label for="wmp-useProxy">通过服务器代理请求 (解决跨域问题)</label> <input type="checkbox" id="wmp-useProxy" ${settings.useProxy ? 'checked' : ''}> <small class="form-text text-muted">强烈建议保持开启，以解决“采集失败”问题。</small> </div> </div> <div class="wmp-collapsible">🎨 显示设置</div> <div class="wmp-collapsible-content"> <div class="row"> <div class="col-6"><label for="wmp-maxWidth">最大宽度</label><input type="text" id="wmp-maxWidth" class="form-control" value="${settings.maxWidth}"></div> <div class="col-6"><label for="wmp-maxHeight">最大高度</label><input type="text" id="wmp-maxHeight" class="form-control" value="${settings.maxHeight}"></div> </div> <div class="form-group mt-2"><label for="wmp-borderRadius">圆角大小</label><input type="text" id="wmp-borderRadius" class="form-control" value="${settings.borderRadius}"></div> <div class="form-group"><label for="wmp-showBorder">显示边框</label><input type="checkbox" id="wmp-showBorder" ${settings.showBorder ? 'checked' : ''}></div> </div> <div class="wmp-collapsible">🧪 测试区域</div> <div class="wmp-collapsible-content"> <div class="form-group"><label for="wmp-testKeyword">测试关键词</label><input type="text" id="wmp-testKeyword" class="form-control" value="${settings.testKeyword}"></div> <div class="wmp-test-area"> <div class="wmp-btn-group"> <button type="button" id="wmp-test-fetch" class="btn btn-primary btn-sm wmp-btn">🔍 测试采集</button> <button type="button" id="wmp-test-insert" class="btn btn-success btn-sm wmp-btn">➕ 测试插入</button> <button type="button" id="wmp-clear-cache" class="btn btn-warning btn-sm wmp-btn">🗑️ 清除缓存</button> </div> <div id="wmp-test-preview" class="wmp-preview"></div> <div id="wmp-test-status" class="wmp-status"></div> <div id="wmp-debug-info" class="wmp-status info" style="display:none; margin-top: 10px; font-size: 0.8em; word-break: break-all;"></div> </div> </div> <div class="mt-3"><small class="text-muted"><strong>💡 使用说明：</strong>启用后，AI的每条回复都会自动插入随机媒体。</small></div> </div> `; $('#extensions_settings').append(settingsHtml); }
