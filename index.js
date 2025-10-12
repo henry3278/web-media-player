@@ -1,18 +1,18 @@
-// 文件名: index.js - URL池随机媒体插件
+// 文件名: index.js - 修复配置保存问题
 (function() {
     console.log('🎲 URL媒体池插件加载...');
     
     const PLUGIN_NAME = 'url-media-pool';
-    const PLUGIN_VERSION = '1.0.0';
+    const PLUGIN_VERSION = '1.1.0';
     
-    // 默认配置
+    // 默认配置 - 包含一些示例URL用于测试
     let config = {
         enabled: true,
         autoInsert: true,
         mediaUrls: [
-            'https://example.com/images/photo1.jpg',
-            'https://example.com/images/photo2.jpg',
-            'https://example.com/videos/video1.mp4'
+            'https://picsum.photos/800/600',  // 测试图片1
+            'https://picsum.photos/800/601',  // 测试图片2
+            'https://picsum.photos/800/602'   // 测试图片3
         ],
         maxWidth: '80%',
         maxHeight: '400px'
@@ -20,10 +20,15 @@
     
     // 创建设置面板
     function createSettingsPanel() {
+        // 确保配置中的URL是数组格式
+        if (typeof config.mediaUrls === 'string') {
+            config.mediaUrls = config.mediaUrls.split('\n').filter(url => url.trim());
+        }
+        
         const html = `
             <div class="list-group-item">
                 <h5>🎲 URL媒体池 v${PLUGIN_VERSION}</h5>
-                <p style="color: #666;">直接在下面添加图片/视频的完整URL，每行一个</p>
+                <p style="color: #666; font-size: 12px;">状态: <span id="ump-config-status">加载中...</span></p>
                 
                 <div class="form-group">
                     <label><input type="checkbox" id="ump-enabled" ${config.enabled ? 'checked' : ''}> 启用插件</label>
@@ -35,85 +40,71 @@
                 
                 <div class="form-group">
                     <label>媒体URL列表 (每行一个):</label>
-                    <textarea class="form-control" id="ump-urls" rows="8" placeholder="https://example.com/image1.jpg&#10;https://example.com/video1.mp4&#10;https://example.com/image2.png">${config.mediaUrls.join('\n')}</textarea>
+                    <textarea class="form-control" id="ump-urls" rows="6" placeholder="https://example.com/image1.jpg&#10;https://example.com/video1.mp4" style="font-family: monospace; font-size: 12px;">${config.mediaUrls.join('\n')}</textarea>
                     <small class="form-text text-muted">
-                        支持: .jpg .png .gif .webp .mp4 .webm .ogg<br>
-                        确保URL可直接访问
+                        支持图片(.jpg .png .gif .webp)和视频(.mp4 .webm)<br>
+                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addExampleUrls()">添加测试URL</button>
                     </small>
                 </div>
                 
-                <div class="row">
-                    <div class="col-6">
-                        <label>最大宽度:</label>
-                        <input type="text" class="form-control" id="ump-max-width" value="${config.maxWidth}">
-                    </div>
-                    <div class="col-6">
-                        <label>最大高度:</label>
-                        <input type="text" class="form-control" id="ump-max-height" value="${config.maxHeight}">
-                    </div>
-                </div>
-                
-                <div class="btn-group mt-3">
-                    <button class="btn btn-sm btn-primary" id="ump-test-random">🎲 测试随机选择</button>
+                <div class="btn-group mt-2">
+                    <button class="btn btn-sm btn-primary" id="ump-test-random">🎲 测试随机</button>
                     <button class="btn btn-sm btn-success" id="ump-test-insert">➕ 测试插入</button>
-                    <button class="btn btn-sm btn-info" id="ump-validate">🔍 验证URL</button>
-                    <button class="btn btn-sm btn-secondary" id="ump-clear">🗑️ 清空列表</button>
+                    <button class="btn btn-sm btn-info" id="ump-debug">🐛 调试信息</button>
                 </div>
                 
-                <div id="ump-status" style="margin-top: 10px; min-height: 20px;"></div>
-                <div id="ump-preview" style="margin-top: 10px;"></div>
-                <div id="ump-url-count" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
+                <div id="ump-status" style="margin-top: 10px; min-height: 20px; font-size: 12px;"></div>
+                <div id="ump-debug-info" style="margin-top: 10px; display: none; background: #f5f5f5; padding: 10px; border-radius: 5px; font-size: 11px; font-family: monospace;"></div>
             </div>
         `;
         
         $('#extensions_settings').append(html);
         bindEvents();
-        updateUrlCount();
+        updateStatus();
+        
+        // 添加示例URL的全局函数
+        window.addExampleUrls = function() {
+            const exampleUrls = [
+                'https://picsum.photos/800/600',
+                'https://picsum.photos/800/601', 
+                'https://picsum.photos/800/602',
+                'https://picsum.photos/800/603',
+                'https://picsum.photos/800/604'
+            ];
+            $('#ump-urls').val(exampleUrls.join('\n'));
+            config.mediaUrls = exampleUrls;
+            saveConfig();
+            updateStatus();
+            showStatus('✅ 已添加测试URL');
+        };
     }
     
     // 绑定事件
     function bindEvents() {
-        // 启用开关
         $('#ump-enabled').on('change', function() {
             config.enabled = this.checked;
             saveConfig();
             showStatus(`插件已${config.enabled ? '启用' : '禁用'}`);
         });
         
-        // 自动插入开关
         $('#ump-auto-insert').on('change', function() {
             config.autoInsert = this.checked;
             saveConfig();
             showStatus(`自动插入已${config.autoInsert ? '开启' : '关闭'}`);
         });
         
-        // URL列表实时保存
         $('#ump-urls').on('input', debounce(() => {
-            config.mediaUrls = $('#ump-urls').val().split('\n')
+            const urlsText = $('#ump-urls').val();
+            config.mediaUrls = urlsText.split('\n')
                 .map(url => url.trim())
-                .filter(url => url.length > 0);
+                .filter(url => url.length > 0 && url.startsWith('http'));
             saveConfig();
-            updateUrlCount();
-        }, 1000));
+            updateStatus();
+        }, 800));
         
-        // 尺寸设置
-        $('#ump-max-width, #ump-max-height').on('input', debounce(() => {
-            config.maxWidth = $('#ump-max-width').val();
-            config.maxHeight = $('#ump-max-height').val();
-            saveConfig();
-        }, 500));
-        
-        // 测试随机选择
         $('#ump-test-random').on('click', testRandomSelection);
-        
-        // 测试插入
         $('#ump-test-insert').on('click', testInsert);
-        
-        // 验证URL
-        $('#ump-validate').on('click', validateUrls);
-        
-        // 清空列表
-        $('#ump-clear').on('click', clearUrlList);
+        $('#ump-debug').on('click', showDebugInfo);
     }
     
     // 防抖函数
@@ -131,226 +122,211 @@
     
     // 显示状态
     function showStatus(message, type = 'info') {
-        const colors = { info: 'blue', success: 'green', error: 'red', warning: 'orange' };
-        $('#ump-status').html(`<span style="color: ${colors[type]}; font-weight: bold;">${message}</span>`);
+        const colors = { info: 'blue', success: 'green', error: 'red' };
+        $('#ump-status').html(`<span style="color: ${colors[type]};">${message}</span>`);
     }
     
-    // 更新URL计数
-    function updateUrlCount() {
+    // 更新状态显示
+    function updateStatus() {
         const count = config.mediaUrls.length;
-        const mediaTypes = {
-            image: config.mediaUrls.filter(url => isImageUrl(url)).length,
-            video: config.mediaUrls.filter(url => isVideoUrl(url)).length,
-            other: config.mediaUrls.filter(url => !isImageUrl(url) && !isVideoUrl(url)).length
-        };
-        
-        $('#ump-url-count').html(`
-            总计: <strong>${count}</strong> 个媒体文件 | 
-            图片: ${mediaTypes.image} | 
-            视频: ${mediaTypes.video} | 
-            其他: ${mediaTypes.other}
-        `);
-    }
-    
-    // 判断URL类型
-    function isImageUrl(url) {
-        return /\.(jpg|jpeg|png|gif|webp|bmp)(\?.*)?$/i.test(url);
-    }
-    
-    function isVideoUrl(url) {
-        return /\.(mp4|webm|ogg|mov|avi)(\?.*)?$/i.test(url);
+        $('#ump-config-status').html(`已配置 ${count} 个媒体URL`);
+        $('#ump-config-status').css('color', count > 0 ? 'green' : 'red');
     }
     
     // 保存配置
     async function saveConfig() {
         try {
+            console.log('💾 保存配置:', config);
             await SillyTavern.extension.saveSettings(PLUGIN_NAME, config);
         } catch (error) {
-            console.error('保存配置失败:', error);
+            console.error('❌ 保存配置失败:', error);
+            showStatus('❌ 保存配置失败: ' + error.message, 'error');
         }
     }
     
     // 加载配置
     async function loadConfig() {
         try {
+            console.log('🔍 加载配置...');
             const saved = await SillyTavern.extension.loadSettings(PLUGIN_NAME);
+            console.log('加载到的配置:', saved);
+            
             if (saved) {
-                config = { ...config, ...saved };
-                // 确保mediaUrls是数组
-                if (typeof config.mediaUrls === 'string') {
-                    config.mediaUrls = config.mediaUrls.split('\n').filter(url => url.trim());
-                }
+                // 深度合并配置
+                config = { 
+                    enabled: saved.enabled !== false,
+                    autoInsert: saved.autoInsert !== false,
+                    mediaUrls: Array.isArray(saved.mediaUrls) ? saved.mediaUrls : 
+                              (typeof saved.mediaUrls === 'string' ? saved.mediaUrls.split('\n').filter(url => url.trim()) : []),
+                    maxWidth: saved.maxWidth || '80%',
+                    maxHeight: saved.maxHeight || '400px'
+                };
             }
         } catch (error) {
-            console.warn('加载配置失败，使用默认配置');
+            console.warn('⚠️ 加载配置失败，使用默认配置:', error);
         }
+    }
+    
+    // 显示调试信息
+    function showDebugInfo() {
+        const debugInfo = {
+            '配置状态': config,
+            '媒体URL数量': config.mediaUrls.length,
+            '第一个URL': config.mediaUrls[0] || '无',
+            'SillyTavern版本': window.SillyTavern ? '已加载' : '未找到'
+        };
+        
+        let debugHtml = '<strong>调试信息:</strong><br>';
+        for (const [key, value] of Object.entries(debugInfo)) {
+            debugHtml += `${key}: ${JSON.stringify(value)}<br>`;
+        }
+        
+        $('#ump-debug-info').html(debugHtml).toggle();
     }
     
     // 随机选择URL
     function getRandomMediaUrl() {
-        if (config.mediaUrls.length === 0) {
+        if (!config.mediaUrls || config.mediaUrls.length === 0) {
+            console.warn('❌ 媒体列表为空');
             return null;
         }
         const randomIndex = Math.floor(Math.random() * config.mediaUrls.length);
-        return config.mediaUrls[randomIndex];
+        const url = config.mediaUrls[randomIndex];
+        console.log('🎲 随机选择:', url);
+        return url;
     }
     
     // 测试随机选择
     function testRandomSelection() {
         const url = getRandomMediaUrl();
         if (!url) {
-            showStatus('❌ 媒体列表为空', 'error');
+            showStatus('❌ 媒体列表为空，请先添加URL', 'error');
             return;
         }
         
-        const isVideo = isVideoUrl(url);
-        const mediaHtml = isVideo ? 
-            `<video src="${url}" controls style="max-width: 300px; max-height: 200px;"></video>` :
-            `<img src="${url}" style="max-width: 300px; max-height: 200px; border: 1px solid #ccc;">`;
+        showStatus(`✅ 随机选择: ${url.substring(0, 50)}...`, 'success');
         
-        $('#ump-preview').html(`
-            <div style="border: 1px solid #ddd; padding: 10px; border-radius: 5px;">
-                <p><strong>随机选择的媒体:</strong> ${isVideo ? '🎥 视频' : '🖼️ 图片'}</p>
-                ${mediaHtml}
-                <p style="word-break: break-all; font-size: 12px; margin-top: 5px;">${url}</p>
+        // 创建预览
+        const previewHtml = `
+            <div style="border: 2px solid #4CAF50; padding: 10px; margin-top: 10px; border-radius: 5px;">
+                <p><strong>🎲 随机选择预览</strong></p>
+                <img src="${url}" style="max-width: 200px; max-height: 150px; border: 1px solid #ccc;" 
+                     onerror="this.src='https://via.placeholder.com/200x150/ff0000/ffffff?text=加载失败'">
+                <p style="word-break: break-all; font-size: 10px; margin: 5px 0;">${url}</p>
             </div>
-        `);
+        `;
         
-        showStatus(`✅ 随机选择: ${url.split('/').pop()}`, 'success');
-    }
-    
-    // 验证URL
-    async function validateUrls() {
-        if (config.mediaUrls.length === 0) {
-            showStatus('❌ 媒体列表为空', 'error');
-            return;
-        }
-        
-        showStatus('🔍 验证URL中...', 'info');
-        
-        let validCount = 0;
-        let invalidUrls = [];
-        
-        // 验证前5个URL（避免过多请求）
-        const urlsToCheck = config.mediaUrls.slice(0, 5);
-        
-        for (const url of urlsToCheck) {
-            try {
-                const response = await fetch(url, { method: 'HEAD' });
-                if (response.ok) {
-                    validCount++;
-                } else {
-                    invalidUrls.push(url);
-                }
-            } catch (error) {
-                invalidUrls.push(url);
-            }
-        }
-        
-        if (invalidUrls.length === 0) {
-            showStatus(`✅ 验证通过！抽查的 ${urlsToCheck.length} 个URL均可访问`, 'success');
-        } else {
-            showStatus(`⚠️ ${validCount}/${urlsToCheck.length} 个URL可访问，${invalidUrls.length} 个可能有问题`, 'warning');
-            console.warn('可能有问题的URL:', invalidUrls);
-        }
-    }
-    
-    // 清空列表
-    function clearUrlList() {
-        if (confirm('确定要清空所有URL吗？')) {
-            config.mediaUrls = [];
-            $('#ump-urls').val('');
-            saveConfig();
-            updateUrlCount();
-            $('#ump-preview').empty();
-            showStatus('🗑️ 媒体列表已清空');
-        }
-    }
-    
-    // 创建媒体元素
-    function createMediaElement(url) {
-        const isVideo = isVideoUrl(url);
-        const mediaElement = isVideo ? document.createElement('video') : document.createElement('img');
-        
-        mediaElement.src = url;
-        mediaElement.style.maxWidth = config.maxWidth;
-        mediaElement.style.maxHeight = config.maxHeight;
-        mediaElement.style.borderRadius = '8px';
-        mediaElement.style.border = '2px solid #e0e0e0';
-        mediaElement.style.cursor = 'pointer';
-        
-        if (isVideo) {
-            mediaElement.controls = true;
-            mediaElement.muted = true;
-            mediaElement.loop = true;
-        }
-        
-        mediaElement.onclick = () => window.open(url, '_blank');
-        mediaElement.onerror = function() {
-            this.style.opacity = '0.5';
-            this.title = '媒体加载失败';
-        };
-        
-        return mediaElement;
-    }
-    
-    // 插入媒体到消息
-    function insertMediaToMessage(messageId) {
-        const url = getRandomMediaUrl();
-        if (!url) return false;
-        
-        const messageElement = document.querySelector(`#mes_${messageId} .mes_text`);
-        if (!messageElement) return false;
-        
-        const container = document.createElement('div');
-        container.className = 'url-media-container';
-        container.style.marginTop = '10px';
-        container.style.textAlign = 'center';
-        
-        const mediaElement = createMediaElement(url);
-        container.appendChild(mediaElement);
-        messageElement.appendChild(container);
-        
-        console.log('✅ 媒体插入成功:', url);
-        return true;
+        $('#ump-status').after(previewHtml);
     }
     
     // 测试插入
     function testInsert() {
-        const messages = document.querySelectorAll('.mes');
-        const lastMessage = messages[messages.length - 1];
+        console.log('🧪 开始测试插入...');
         
-        if (lastMessage && !lastMessage.querySelector('.mes_user')) {
-            const messageId = lastMessage.id.replace('mes_', '');
-            if (insertMediaToMessage(messageId)) {
-                showStatus('✅ 测试插入成功！');
-            } else {
-                showStatus('❌ 插入失败，媒体列表为空', 'error');
-            }
-        } else {
-            showStatus('❌ 找不到AI回复消息', 'error');
+        if (!config.mediaUrls || config.mediaUrls.length === 0) {
+            showStatus('❌ 插入失败：媒体列表为空', 'error');
+            return;
         }
+        
+        // 查找最新的AI消息
+        const messages = document.querySelectorAll('.mes');
+        let lastAIMessage = null;
+        
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (!messages[i].querySelector('.mes_user')) {
+                lastAIMessage = messages[i];
+                break;
+            }
+        }
+        
+        if (!lastAIMessage) {
+            showStatus('❌ 找不到AI回复消息，请先让AI回复一条消息', 'error');
+            return;
+        }
+        
+        const messageId = lastAIMessage.id.replace('mes_', '');
+        const url = getRandomMediaUrl();
+        
+        if (!url) {
+            showStatus('❌ 获取随机URL失败', 'error');
+            return;
+        }
+        
+        // 插入媒体
+        const messageElement = lastAIMessage.querySelector('.mes_text');
+        if (!messageElement) {
+            showStatus('❌ 找不到消息内容元素', 'error');
+            return;
+        }
+        
+        const container = document.createElement('div');
+        container.innerHTML = `
+            <div style="margin-top: 10px; text-align: center; border-left: 3px solid #4CAF50; padding-left: 10px;">
+                <small style="color: #666;">🔧 [测试插入]</small>
+                <img src="${url}" style="max-width: 300px; max-height: 200px; border-radius: 5px; border: 2px solid #4CAF50;" 
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
+                <div style="display: none; color: red; font-size: 12px;">❌ 图片加载失败</div>
+            </div>
+        `;
+        
+        messageElement.appendChild(container);
+        showStatus('✅ 测试插入成功！已在AI回复后添加媒体', 'success');
+        
+        // 滚动到最新消息
+        lastAIMessage.scrollIntoView({ behavior: 'smooth' });
     }
     
     // AI回复时自动插入
     function onMessageRendered(event, data) {
         if (!config.enabled || !config.autoInsert || data.message.is_user) return;
         
+        console.log('🤖 AI回复，准备插入媒体...');
+        
         setTimeout(() => {
-            insertMediaToMessage(data.message.id);
+            if (!config.mediaUrls || config.mediaUrls.length === 0) {
+                console.warn('❌ 自动插入失败：媒体列表为空');
+                return;
+            }
+            
+            const url = getRandomMediaUrl();
+            if (!url) return;
+            
+            const messageElement = document.querySelector(`#mes_${data.message.id} .mes_text`);
+            if (!messageElement) return;
+            
+            const container = document.createElement('div');
+            container.style.marginTop = '10px';
+            container.style.textAlign = 'center';
+            
+            const img = document.createElement('img');
+            img.src = url;
+            img.style.maxWidth = '80%';
+            img.style.maxHeight = '400px';
+            img.style.borderRadius = '5px';
+            img.onerror = function() {
+                this.style.opacity = '0.3';
+            };
+            
+            container.appendChild(img);
+            messageElement.appendChild(container);
+            
+            console.log('✅ 自动插入成功:', url);
         }, 100);
     }
     
     // 初始化
     async function initialize() {
+        console.log('🔧 初始化插件...');
         await loadConfig();
         createSettingsPanel();
         
         if (window.SillyTavern && SillyTavern.events) {
             SillyTavern.events.on('message-rendered', onMessageRendered);
+            console.log('✅ 事件监听器已注册');
         }
         
-        console.log('🎲 URL媒体池插件初始化完成');
+        console.log('🎊 URL媒体池插件初始化完成');
+        showStatus('✅ 插件加载完成，请添加媒体URL后测试', 'success');
     }
     
     // 启动
