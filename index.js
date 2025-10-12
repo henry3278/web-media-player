@@ -1,7 +1,7 @@
-// 文件名: index.js (纯前端版 v9.0.0)
+// 文件名: index.js (目录自动扫描版 v10.0.0)
 (function () {
     const extensionName = 'local-media-player';
-    const extensionVersion = '9.0.0';
+    const extensionVersion = '10.0.0';
 
     const defaultSettings = { enabled: true, mediaType: 'image', maxWidth: '80%', maxHeight: '450px', borderRadius: '8px', showBorder: true, };
     let settings = { ...defaultSettings };
@@ -11,10 +11,10 @@
         const settingsHtml = `
             <div class="list-group-item" id="local-media-player-settings">
                 <div class="d-flex w-100 justify-content-between">
-                    <h5 class="mb-1">📁 本地媒体播放器 (手动版)</h5>
+                    <h5 class="mb-1">📁 本地媒体播放器 (自动扫描)</h5>
                     <small>v${extensionVersion}</small>
                 </div>
-                <p class="mb-2 text-muted">从插件目录的 <code>filelist.json</code> 文件中读取媒体列表。</p>
+                <p class="mb-2 text-muted">自动扫描插件目录下的 <code>photos</code> 和 <code>videos</code> 文件夹。</p>
                 
                 <div class="wmp-collapsible active">⚙️ 基础设置</div>
                 <div class="wmp-collapsible-content" style="display: block;">
@@ -42,8 +42,8 @@
                 <div class="wmp-collapsible">🔍 文件管理</div>
                 <div class="wmp-collapsible-content">
                     <div class="wmp-test-area">
-                        <p class="text-muted small">每次修改 <code>filelist.json</code> 或上传新文件后，请点击下方按钮刷新。</p>
-                        <button type="button" id="wmp-refresh-files" class="btn btn-primary btn-sm wmp-btn">🔄 重新加载列表</button>
+                        <p class="text-muted small">上传新文件后，请点击下方按钮刷新。</p>
+                        <button type="button" id="wmp-refresh-files" class="btn btn-primary btn-sm wmp-btn">🔄 扫描文件夹</button>
                         <div id="wmp-file-status" class="wmp-status"></div>
                     </div>
                 </div>
@@ -64,31 +64,72 @@
     }
 
     /**
-     * 刷新文件列表 - 从本地 filelist.json 读取
+     * 【全新核心】扫描目录列表
+     * @param {string} dirPath - 要扫描的目录路径, e.g., '/photos/'
+     * @param {RegExp} fileRegex - 用于匹配文件名的正则表达式
+     * @returns {Promise<string[]>} - 媒体文件的完整URL数组
+     */
+    async function scanDirectory(dirPath, fileRegex) {
+        const baseUrl = `/extensions/third-party/web-media-player${dirPath}`;
+        const response = await fetch(baseUrl);
+        if (!response.ok) {
+            throw new Error(`访问目录 ${baseUrl} 失败 (HTTP ${response.status})。可能是云服务商禁用了目录浏览功能。`);
+        }
+
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        const urls = [];
+        const links = doc.querySelectorAll('a');
+
+        links.forEach(link => {
+            const href = link.getAttribute('href');
+            if (href && fileRegex.test(href)) {
+                // new URL() 会自动处理相对路径和绝对路径，非常稳健
+                const fullUrl = new URL(href, response.url).href;
+                urls.push(fullUrl);
+            }
+        });
+        
+        return urls;
+    }
+
+    /**
+     * 刷新文件列表 - 通过扫描目录实现
      */
     async function refreshFileList() {
         const status = $('#wmp-file-status');
-        status.removeClass('success error info').html('🔄 正在读取 <code>filelist.json</code>...').addClass('info').show();
+        status.removeClass('success error info').html('🔄 正在扫描文件夹...').addClass('info').show();
+        
         try {
-            // 添加一个随机查询参数来防止浏览器缓存
-            const fileListUrl = `/extensions/third-party/web-media-player/filelist.json?t=${Date.now()}`;
-            const response = await fetch(fileListUrl);
-            if (!response.ok) throw new Error(`HTTP错误: ${response.status} (请确认 filelist.json 文件存在且格式正确)`);
+            const photoRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
+            const videoRegex = /\.(mp4|webm|ogg|mov)$/i;
+
+            // 并行扫描 photos 和 videos 文件夹
+            const [photoUrls, videoUrls] = await Promise.all([
+                scanDirectory('/photos/', photoRegex).catch(e => { console.warn(e); return []; }), // 如果一个失败，不影响另一个
+                scanDirectory('/videos/', videoRegex).catch(e => { console.warn(e); return []; })
+            ]);
+
+            mediaCache = {
+                photos: [...new Set(photoUrls)], // 去重
+                videos: [...new Set(videoUrls)]
+            };
             
-            const data = await response.json();
-            
-            // 将文件名转换为完整的URL路径
-            mediaCache.photos = data.photos.map(file => `/extensions/third-party/web-media-player/photos/${encodeURIComponent(file)}`);
-            mediaCache.videos = data.videos.map(file => `/extensions/third-party/web-media-player/videos/${encodeURIComponent(file)}`);
-            
-            status.html(`✅ 成功加载 ${mediaCache.photos.length} 张图片 和 ${mediaCache.videos.length} 个视频。`).addClass('success');
+            if (mediaCache.photos.length === 0 && mediaCache.videos.length === 0) {
+                 status.html(`❌ 未扫描到任何媒体文件。请检查文件夹是否为空，或确认云服务商是否支持目录浏览。`).addClass('error');
+            } else {
+                 status.html(`✅ 成功扫描到 ${mediaCache.photos.length} 张图片 和 ${mediaCache.videos.length} 个视频。`).addClass('success');
+            }
+
         } catch (error) {
-            status.html(`❌ 加载列表失败: ${error.message}`).addClass('error');
+            status.html(`❌ 扫描失败: ${error.message}`).addClass('error');
         }
     }
 
-    // ... (其余所有辅助函数，如 getRandomMediaUrl, autoInsertMedia 等都与 8.0.1 版本相同，无需修改) ...
+    // ... (其余所有辅助函数，如 getRandomMediaUrl, autoInsertMedia 等都与之前版本相同，无需修改) ...
     function getRandomMediaUrl() { const { photos, videos } = mediaCache; let availableUrls = []; if (settings.mediaType === 'image') { availableUrls = photos; } else if (settings.mediaType === 'video') { availableUrls = videos; } else { availableUrls = [...photos, ...videos]; } if (availableUrls.length === 0) { console.warn(`[${extensionName}] 没有可用的媒体文件来插入。`); return null; } const randomIndex = Math.floor(Math.random() * availableUrls.length); return availableUrls[randomIndex]; } function updateSetting(key, type) { return async function() { const value = type === 'checkbox' ? $(this).is(':checked') : $(this).val(); settings[key] = value; await SillyTavern.extension.saveSettings(extensionName, settings); updateMediaStyles(); }; } function updateMediaStyles() { const style = ` .web-media-player-container img, .web-media-player-container video { max-width: ${settings.maxWidth} !important; max-height: ${settings.maxHeight} !important; border-radius: ${settings.borderRadius} !important; border: ${settings.showBorder ? '2px solid #e9ecef' : 'none'} !important; } `; $('#wmp-dynamic-styles').remove(); $('head').append(`<style id="wmp-dynamic-styles">${style}</style>`); } function isVideoUrl(url) { return ['.mp4', '.webm', '.ogg', '.mov'].some(ext => url.toLowerCase().endsWith(ext)); } async function autoInsertMedia(type, data) { const message = data.message; if (!settings.enabled || message.is_user || !message.mes) return; const messageElement = document.querySelector(`#mes_${message.id} .mes_text`); if (!messageElement) return; const mediaUrl = getRandomMediaUrl(); if (!mediaUrl) return; const container = document.createElement('div'); container.className = 'web-media-player-container'; const isVideo = isVideoUrl(mediaUrl); let mediaElement; if (isVideo) { mediaElement = document.createElement('video'); mediaElement.src = mediaUrl; mediaElement.controls = true; mediaElement.loop = true; mediaElement.muted = true; } else { mediaElement = document.createElement('img'); mediaElement.src = mediaUrl; mediaElement.onclick = () => window.open(mediaUrl, '_blank'); } container.appendChild(mediaElement); messageElement.appendChild(container); updateMediaStyles(); }
-    $(document).ready(async function () { try { const loadedSettings = await SillyTavern.extension.loadSettings(extensionName); settings = { ...defaultSettings, ...loadedSettings }; } catch (error) { console.error(`[${extensionName}] 加载设置失败:`, error); } addSettingsPanel(); addSettingsEventListeners(); updateMediaStyles(); SillyTavern.events.on('message-rendered', autoInsertMedia); await refreshFileList(); console.log(`[${extensionName} v${extensionVersion}] 本地播放器(手动版)已加载`); });
+    $(document).ready(async function () { try { const loadedSettings = await SillyTavern.extension.loadSettings(extensionName); settings = { ...defaultSettings, ...loadedSettings }; } catch (error) { console.error(`[${extensionName}] 加载设置失败:`, error); } addSettingsPanel(); addSettingsEventListeners(); updateMediaStyles(); SillyTavern.events.on('message-rendered', autoInsertMedia); await refreshFileList(); console.log(`[${extensionName} v${extensionVersion}] 本地播放器(自动扫描版)已加载`); });
 
 })();
