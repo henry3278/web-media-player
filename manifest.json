@@ -1,10 +1,6 @@
 {
-    "display_name": "Image Inserter",
-    "description": "Insert images into AI responses",
+    "display_name": "媒体播放器",
+    "author": "AI助手",
     "version": "1.0.0",
-    "author": "Assistant",
-    "repo_url": "",
-    "tags": ["images", "media"],
-    "requirements": [],
-    "scripts": ["script.js"]
+    "js": "index.js"
 }
