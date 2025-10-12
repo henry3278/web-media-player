@@ -1,7 +1,8 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
+const https = require('https');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { URL } = require('url');
 
 class ImageGrabber {
   constructor() {
@@ -31,7 +32,8 @@ class ImageGrabber {
       insertPosition: "after_first_sentence",
       maxImageWidth: "400px",
       requestTimeout: 5000,
-      cacheDuration: 300000
+      cacheDuration: 300000,
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     };
   }
 
@@ -63,7 +65,6 @@ class ImageGrabber {
   async getRandomImage() {
     const cacheKey = this.config.targetWebsite;
     
-    // 检查缓存
     if (this.cache.has(cacheKey)) {
       const cached = this.cache.get(cacheKey);
       if (Date.now() - cached.timestamp < (this.config.cacheDuration || 300000)) {
@@ -71,7 +72,6 @@ class ImageGrabber {
       }
     }
 
-    // 抓取新图片
     try {
       const images = await this.scrapeImages();
       this.cache.set(cacheKey, { 
@@ -88,53 +88,153 @@ class ImageGrabber {
   }
 
   async scrapeImages() {
-    const response = await axios.get(this.config.targetWebsite, {
-      timeout: this.config.requestTimeout || 5000,
-      headers: {
-        'User-Agent': this.config.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    try {
+      const html = await this.fetchUrl(this.config.targetWebsite);
+      const images = this.parseImagesFromHtml(html);
+      return images;
+    } catch (error) {
+      console.error('抓取页面失败:', error);
+      return [];
+    }
+  }
+
+  async fetchUrl(url) {
+    return new Promise((resolve, reject) => {
+      try {
+        const parsedUrl = new URL(url);
+        const protocol = parsedUrl.protocol === 'https:' ? https : http;
+        
+        const options = {
+          hostname: parsedUrl.hostname,
+          port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: 'GET',
+          headers: {
+            'User-Agent': this.config.userAgent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Cache-Control': 'no-cache'
+          },
+          timeout: this.config.requestTimeout || 5000
+        };
+
+        const req = protocol.request(options, (res) => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(`HTTP ${res.statusCode}`));
+            return;
+          }
+
+          let data = '';
+          res.setEncoding('utf8');
+          
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+
+          res.on('end', () => {
+            resolve(data);
+          });
+        });
+
+        req.on('error', (error) => {
+          reject(error);
+        });
+
+        req.on('timeout', () => {
+          req.destroy();
+          reject(new Error('请求超时'));
+        });
+
+        req.end();
+      } catch (error) {
+        reject(error);
       }
     });
-    
-    const $ = cheerio.load(response.data);
+  }
+
+  parseImagesFromHtml(html) {
     const images = [];
-
-    $(this.config.imageSelectors.join(',')).each((i, elem) => {
-      let src = $(elem).attr('src');
+    
+    // 基础img标签解析
+    const imgRegex = /<img[^>]+src="([^">]+)"[^>]*>/gi;
+    let match;
+    
+    while ((match = imgRegex.exec(html)) !== null) {
+      const src = match[1];
       if (src && this.isValidImage(src)) {
-        images.push(this.makeAbsoluteUrl(src));
+        const absoluteUrl = this.makeAbsoluteUrl(src);
+        if (absoluteUrl && !images.includes(absoluteUrl)) {
+          images.push(absoluteUrl);
+        }
       }
-    });
-
+    }
+    
+    // 支持CSS选择器
+    if (this.config.imageSelectors && this.config.imageSelectors.length > 0) {
+      for (const selector of this.config.imageSelectors) {
+        if (selector.startsWith('img[') && selector.includes('*=')) {
+          const attrMatch = selector.match(/img\[src\*=["']([^"']+)["']\]/);
+          if (attrMatch) {
+            const pattern = attrMatch[1];
+            const patternRegex = new RegExp(`<img[^>]+src="([^">]*${pattern}[^">]*)"[^>]*>`, 'gi');
+            let patternMatch;
+            
+            while ((patternMatch = patternRegex.exec(html)) !== null) {
+              const src = patternMatch[1];
+              if (src && this.isValidImage(src)) {
+                const absoluteUrl = this.makeAbsoluteUrl(src);
+                if (absoluteUrl && !images.includes(absoluteUrl)) {
+                  images.push(absoluteUrl);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
     return images;
   }
 
   isValidImage(src) {
-    if (!src) return false;
+    if (!src || src.trim().length === 0) {
+      return false;
+    }
     
     const lowerSrc = src.toLowerCase();
     const excluded = this.config.excludeKeywords || [];
     
     // 检查排除关键词
-    if (excluded.some(keyword => lowerSrc.includes(keyword.toLowerCase()))) {
+    if (excluded.some(keyword => 
+      keyword && lowerSrc.includes(keyword.toLowerCase())
+    )) {
       return false;
     }
     
     // 检查图片格式
-    return /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(src);
+    return /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(lowerSrc);
   }
 
   makeAbsoluteUrl(src) {
-    const baseUrl = this.config.targetWebsite;
+    if (!src) return null;
     
-    if (src.startsWith('//')) {
-      return 'https:' + src;
-    } else if (src.startsWith('/')) {
-      return new URL(src, baseUrl).href;
-    } else if (!src.startsWith('http')) {
-      return new URL(src, baseUrl).href;
+    try {
+      const baseUrl = this.config.targetWebsite;
+      
+      if (src.startsWith('//')) {
+        return 'https:' + src;
+      } else if (src.startsWith('/')) {
+        return new URL(src, baseUrl).href;
+      } else if (!src.startsWith('http')) {
+        return new URL(src, baseUrl).href;
+      }
+      
+      return src;
+    } catch (error) {
+      console.error('URL转换失败:', error);
+      return null;
     }
-    
-    return src;
   }
 
   selectRandomImage(images) {
@@ -143,6 +243,8 @@ class ImageGrabber {
   }
 
   insertImage(text, imageUrl) {
+    if (!text || !imageUrl) return text;
+    
     const imageHtml = this.createImageHtml(imageUrl);
     const position = this.getInsertPosition();
     
@@ -151,7 +253,6 @@ class ImageGrabber {
       return text.replace(position, `$1$2${imageHtml}`);
     }
     
-    // 默认插入到文本末尾
     return text + imageHtml;
   }
 
@@ -177,23 +278,9 @@ class ImageGrabber {
   async testConnection(testConfig) {
     try {
       const config = { ...this.config, ...testConfig };
-      const response = await axios.get(config.targetWebsite, {
-        timeout: config.requestTimeout,
-        headers: {
-          'User-Agent': config.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
+      const html = await this.fetchUrl(config.targetWebsite);
+      const images = this.parseImagesFromHtml(html);
       
-      const $ = cheerio.load(response.data);
-      const images = [];
-
-      $(config.imageSelectors.join(',')).each((i, elem) => {
-        let src = $(elem).attr('src');
-        if (src && this.isValidImage(src, config.excludeKeywords)) {
-          images.push(this.makeAbsoluteUrl(src, config.targetWebsite));
-        }
-      });
-
       return images;
     } catch (error) {
       throw new Error(`连接测试失败: ${error.message}`);
