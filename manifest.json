@@ -1,0 +1,23 @@
+{
+  "name": "ai-tavern-image-grabber-simple",
+  "version": "3.0.0",
+  "description": "AI云酒馆图片抓取插件 - 简化版",
+  "type": "extension",
+  "author": "AI云酒馆",
+  "entry": "./grabber.js",
+  "config": "./config.js",
+  "dependencies": [],
+  "permissions": ["network"],
+  "settings": {
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "label": "启用插件"
+    },
+    "targetWebsite": {
+      "type": "string",
+      "default": "https://www.kchai.org/",
+      "label": "目标网站"
+    }
+  }
+}
