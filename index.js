@@ -1,39 +1,37 @@
-// 文件名: index.js - 稳定版URL媒体池插件
+// 文件名: index.js - 终极稳定版URL媒体池插件
 (function() {
-    console.log('🎲 稳定版URL媒体池插件加载...');
+    console.log('🎲 终极稳定版URL媒体池插件加载...');
     
     const PLUGIN_NAME = 'url-media-pool';
-    const PLUGIN_VERSION = '2.1.0';
+    const PLUGIN_VERSION = '3.0.0';
     
-    // 默认配置（包含示例URL确保有内容）
+    // 默认配置 - 确保有可用的测试URL
     let config = {
         enabled: true,
         autoInsert: true,
         mediaUrls: [
-            'https://picsum.photos/300/200',
-            'https://picsum.photos/300/201',
-            'https://picsum.photos/300/202'
+            'https://picsum.photos/300/200?random=1',
+            'https://picsum.photos/300/200?random=2',
+            'https://picsum.photos/300/200?random=3'
         ],
         mediaType: 'mixed',
-        insertPosition: 'inline', // after, before, inline, random
+        insertPosition: 'after',
         imageWidth: '300px',
-        imageHeight: 'auto',
-        videoWidth: '400px',
-        videoHeight: '225px'
+        imageHeight: 'auto'
     };
     
     let insertedMessages = new Set();
     
     // 创建设置面板
     function createSettingsPanel() {
+        // 确保配置正确
         normalizeConfig();
         
         const html = `
             <div class="list-group-item">
-                <h5>🎲 稳定版URL媒体池 v${PLUGIN_VERSION}</h5>
-                <div style="color: #666; font-size: 12px; margin-bottom: 10px;">
-                    状态: <span id="ump-config-status" style="color: green;">✅ 已加载</span> | 
-                    URL数量: <span id="ump-url-count">${config.mediaUrls.length}</span>
+                <h5>🎲 终极稳定版URL媒体池 v${PLUGIN_VERSION}</h5>
+                <div style="color: #28a745; font-size: 12px; margin-bottom: 15px;">
+                    ✅ 插件已加载 | URL数量: <strong id="ump-url-count">${config.mediaUrls.length}</strong>
                 </div>
                 
                 <div class="form-group">
@@ -45,31 +43,12 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>媒体类型:</label>
-                    <select class="form-control" id="ump-media-type">
-                        <option value="mixed" ${config.mediaType === 'mixed' ? 'selected' : ''}>混合模式</option>
-                        <option value="image-only" ${config.mediaType === 'image-only' ? 'selected' : ''}>仅图片</option>
-                        <option value="video-only" ${config.mediaType === 'video-only' ? 'selected' : ''}>仅视频</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label>插入位置:</label>
-                    <select class="form-control" id="ump-insert-position">
-                        <option value="after" ${config.insertPosition === 'after' ? 'selected' : ''}>回复之后（单独段落）</option>
-                        <option value="before" ${config.insertPosition === 'before' ? 'selected' : ''}>回复之前（单独段落）</option>
-                        <option value="inline" ${config.insertPosition === 'inline' ? 'selected' : ''}>段落中（内嵌显示）</option>
-                        <option value="random" ${config.insertPosition === 'random' ? 'selected' : ''}>随机位置</option>
-                    </select>
-                    <small class="form-text text-muted">"段落中"模式将图片插入到文本中间</small>
-                </div>
-                
-                <div class="form-group">
-                    <label>媒体URL列表:</label>
-                    <textarea class="form-control" id="ump-urls" rows="6" placeholder="每行一个URL&#10;https://example.com/image.jpg&#10;https://example.com/video.mp4" style="font-family: monospace; font-size: 12px;">${config.mediaUrls.join('\n')}</textarea>
-                    <div class="mt-1">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addExampleUrls()">添加示例</button>
-                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearUrls()">清空</button>
+                    <label>媒体URL列表 (每行一个URL):</label>
+                    <textarea class="form-control" id="ump-urls" rows="6" style="font-family: monospace; font-size: 12px; border: 1px solid #ccc;">${config.mediaUrls.join('\n')}</textarea>
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-success" id="ump-save-urls">💾 保存URL列表</button>
+                        <button class="btn btn-sm btn-secondary" id="ump-add-example">添加示例URL</button>
+                        <button class="btn btn-sm btn-outline-danger" id="ump-clear-urls">清空</button>
                     </div>
                 </div>
                 
@@ -84,47 +63,36 @@
                     </div>
                 </div>
                 
-                <div class="row mt-2">
-                    <div class="col-6">
-                        <label>视频宽度:</label>
-                        <input type="text" class="form-control" id="ump-video-width" value="${config.videoWidth}">
-                    </div>
-                    <div class="col-6">
-                        <label>视频高度:</label>
-                        <input type="text" class="form-control" id="ump-video-height" value="${config.videoHeight}">
-                    </div>
-                </div>
-                
                 <div class="btn-group mt-3 w-100">
-                    <button class="btn btn-sm btn-primary" id="ump-test-random">🎲 测试随机</button>
+                    <button class="btn btn-sm btn-primary" id="ump-test-preview">👀 预览测试</button>
                     <button class="btn btn-sm btn-success" id="ump-test-insert">➕ 测试插入</button>
-                    <button class="btn btn-sm btn-info" id="ump-debug">🐛 调试</button>
+                    <button class="btn btn-sm btn-info" id="ump-check-config">🔍 检查配置</button>
                 </div>
                 
-                <div id="ump-status" style="margin-top: 10px; min-height: 20px; font-size: 12px;"></div>
+                <div id="ump-status" style="margin-top: 15px; padding: 10px; border-radius: 5px; background: #f8f9fa; font-size: 13px;"></div>
                 <div id="ump-preview" style="margin-top: 10px;"></div>
             </div>
         `;
         
         $('#extensions_settings').append(html);
         bindEvents();
-        updateUrlCount();
+        showStatus('✅ 插件初始化完成，可以开始测试', 'success');
     }
     
     // 规范化配置
     function normalizeConfig() {
         if (typeof config.mediaUrls === 'string') {
-            config.mediaUrls = config.mediaUrls.split('\n').filter(url => url.trim());
+            config.mediaUrls = config.mediaUrls.split('\n').filter(url => url.trim().length > 0);
         }
         if (!Array.isArray(config.mediaUrls)) {
             config.mediaUrls = [];
         }
-        // 确保至少有示例URL
+        // 确保至少有测试URL
         if (config.mediaUrls.length === 0) {
             config.mediaUrls = [
-                'https://picsum.photos/300/200',
-                'https://picsum.photos/300/201',
-                'https://picsum.photos/300/202'
+                'https://picsum.photos/300/200?random=1',
+                'https://picsum.photos/300/200?random=2', 
+                'https://picsum.photos/300/200?random=3'
             ];
         }
     }
@@ -145,303 +113,268 @@
             showStatus(`自动插入已${config.autoInsert ? '开启' : '关闭'}`);
         });
         
-        // 媒体类型
-        $('#ump-media-type').on('change', function() {
-            config.mediaType = this.value;
-            saveConfig();
-            showStatus(`媒体类型: ${this.options[this.selectedIndex].text}`);
-        });
-        
-        // 插入位置
-        $('#ump-insert-position').on('change', function() {
-            config.insertPosition = this.value;
-            saveConfig();
-            showStatus(`插入位置: ${this.options[this.selectedIndex].text}`);
-        });
-        
-        // URL列表
-        $('#ump-urls').on('input', debounce(() => {
+        // 保存URL按钮
+        $('#ump-save-urls').on('click', function() {
             updateUrlList();
-        }, 800));
+            showStatus('✅ URL列表已保存', 'success');
+        });
         
-        // 尺寸设置
-        $('#ump-image-width, #ump-image-height, #ump-video-width, #ump-video-height').on('input', debounce(() => {
-            config.imageWidth = $('#ump-image-width').val() || '300px';
-            config.imageHeight = $('#ump-image-height').val() || 'auto';
-            config.videoWidth = $('#ump-video-width').val() || '400px';
-            config.videoHeight = $('#ump-video-height').val() || '225px';
-            saveConfig();
-        }, 500));
-        
-        // 测试按钮
-        $('#ump-test-random').on('click', testRandomSelection);
-        $('#ump-test-insert').on('click', testInsert);
-        $('#ump-debug').on('click', showDebugInfo);
-        
-        // 全局函数
-        window.addExampleUrls = function() {
+        // 添加示例URL
+        $('#ump-add-example').on('click', function() {
             const exampleUrls = [
-                'https://picsum.photos/300/200',
-                'https://picsum.photos/300/201',
-                'https://picsum.photos/300/202',
-                'https://picsum.photos/300/203',
-                'https://picsum.photos/300/204'
+                'https://picsum.photos/300/200?random=1',
+                'https://picsum.photos/300/200?random=2',
+                'https://picsum.photos/300/200?random=3',
+                'https://picsum.photos/300/200?random=4',
+                'https://picsum.photos/300/200?random=5'
             ];
             $('#ump-urls').val(exampleUrls.join('\n'));
             updateUrlList();
-            showStatus('✅ 已添加示例URL');
-        };
+            showStatus('✅ 已添加示例URL', 'success');
+        });
         
-        window.clearUrls = function() {
+        // 清空URL
+        $('#ump-clear-urls').on('click', function() {
             if (confirm('确定要清空URL列表吗？')) {
                 $('#ump-urls').val('');
                 updateUrlList();
-                showStatus('🗑️ 已清空URL列表');
+                showStatus('🗑️ URL列表已清空', 'info');
             }
-        };
-    }
-    
-    // 防抖函数
-    function debounce(func, wait) {
-        let timeout;
-        return function executedFunction(...args) {
-            const later = () => {
-                clearTimeout(timeout);
-                func(...args);
-            };
-            clearTimeout(timeout);
-            timeout = setTimeout(later, wait);
-        };
+        });
+        
+        // 尺寸设置
+        $('#ump-image-width, #ump-image-height').on('input', function() {
+            config.imageWidth = $('#ump-image-width').val() || '300px';
+            config.imageHeight = $('#ump-image-height').val() || 'auto';
+            saveConfig();
+        });
+        
+        // 预览测试
+        $('#ump-test-preview').on('click', testPreview);
+        
+        // 测试插入
+        $('#ump-test-insert').on('click', testInsert);
+        
+        // 检查配置
+        $('#ump-check-config').on('click', checkConfig);
     }
     
     // 更新URL列表
     function updateUrlList() {
-        const urlsText = $('#ump-urls').val();
-        config.mediaUrls = urlsText.split('\n')
-            .map(url => url.trim())
-            .filter(url => url.length > 0);
-        saveConfig();
-        updateUrlCount();
-    }
-    
-    // 显示状态
-    function showStatus(message, type = 'info') {
-        const colors = { info: 'blue', success: 'green', error: 'red' };
-        $('#ump-status').html(`<span style="color: ${colors[type]};">${message}</span>`);
+        try {
+            const urlsText = $('#ump-urls').val();
+            const urls = urlsText.split('\n')
+                .map(url => url.trim())
+                .filter(url => url.length > 0);
+            
+            config.mediaUrls = urls;
+            saveConfig();
+            updateUrlCount();
+            
+            console.log('📝 URL列表更新:', urls);
+            return true;
+        } catch (error) {
+            console.error('更新URL列表失败:', error);
+            return false;
+        }
     }
     
     // 更新URL计数
     function updateUrlCount() {
         const count = config.mediaUrls.length;
         $('#ump-url-count').text(count);
-        $('#ump-config-status').css('color', count > 0 ? 'green' : 'red');
     }
     
-    // 保存配置（简化版）
+    // 显示状态
+    function showStatus(message, type = 'info') {
+        const colors = {
+            info: '#17a2b8',
+            success: '#28a745', 
+            error: '#dc3545',
+            warning: '#ffc107'
+        };
+        $('#ump-status').html(`<span style="color: ${colors[type]}; font-weight: bold;">${message}</span>`);
+    }
+    
+    // 保存配置
     function saveConfig() {
         try {
             console.log('💾 保存配置:', config);
-            // 使用localStorage确保可靠保存
-            localStorage.setItem(`st-extension-${PLUGIN_NAME}`, JSON.stringify(config));
+            // 使用可靠的localStorage
+            localStorage.setItem(`st_ext_${PLUGIN_NAME}`, JSON.stringify(config));
+            return true;
         } catch (error) {
-            console.error('保存配置失败:', error);
+            console.error('❌ 保存配置失败:', error);
+            showStatus('❌ 配置保存失败', 'error');
+            return false;
         }
     }
     
-    // 加载配置（简化版）
+    // 加载配置
     function loadConfig() {
         try {
-            const saved = localStorage.getItem(`st-extension-${PLUGIN_NAME}`);
+            console.log('🔍 加载配置...');
+            const saved = localStorage.getItem(`st_ext_${PLUGIN_NAME}`);
             if (saved) {
                 const parsed = JSON.parse(saved);
                 config = { ...config, ...parsed };
-                console.log('✅ 配置加载成功');
+                console.log('✅ 配置加载成功:', config);
+                return true;
             }
         } catch (error) {
-            console.warn('加载配置失败，使用默认配置');
+            console.warn('⚠️ 加载配置失败，使用默认配置');
         }
+        return false;
     }
     
-    // 显示调试信息
-    function showDebugInfo() {
+    // 检查配置
+    function checkConfig() {
         const info = {
             'URL数量': config.mediaUrls.length,
-            '前3个URL': config.mediaUrls.slice(0, 3),
-            '配置': config
+            '启用状态': config.enabled,
+            '自动插入': config.autoInsert,
+            '前3个URL': config.mediaUrls.slice(0, 3)
         };
         
+        showStatus(`配置检查: ${info.URL数量}个URL, 启用:${info.启用状态}, 自动插入:${info.自动插入}`, 'info');
+        
         $('#ump-preview').html(`
-            <div style="background: #f5f5f5; padding: 10px; border-radius: 5px; font-size: 11px;">
-                <strong>调试信息:</strong><br>
-                ${JSON.stringify(info, null, 2).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;')}
+            <div style="background: #e9ecef; padding: 10px; border-radius: 5px; font-size: 12px;">
+                <strong>配置详情:</strong><br>
+                <pre style="margin: 5px 0;">${JSON.stringify(info, null, 2)}</pre>
             </div>
         `);
     }
     
-    // 判断URL类型
-    function isImageUrl(url) {
-        return /\.(jpg|jpeg|png|gif|webp|bmp)(\?.*)?$/i.test(url);
-    }
-    
-    function isVideoUrl(url) {
-        return /\.(mp4|webm|ogg|mov|avi)(\?.*)?$/i.test(url);
-    }
-    
-    // 获取过滤后的URL
-    function getFilteredUrls() {
-        let urls = config.mediaUrls;
-        
-        switch (config.mediaType) {
-            case 'image-only':
-                urls = urls.filter(isImageUrl);
-                break;
-            case 'video-only':
-                urls = urls.filter(isVideoUrl);
-                break;
+    // 获取随机URL
+    function getRandomMediaUrl() {
+        if (!config.mediaUrls || config.mediaUrls.length === 0) {
+            console.warn('❌ 媒体URL列表为空');
+            return null;
         }
         
-        return urls;
+        const randomIndex = Math.floor(Math.random() * config.mediaUrls.length);
+        const url = config.mediaUrls[randomIndex];
+        console.log('🎲 随机选择URL:', url);
+        return url;
     }
     
-    // 随机选择URL
-    function getRandomMediaUrl() {
-        const urls = getFilteredUrls();
-        return urls.length > 0 ? urls[Math.floor(Math.random() * urls.length)] : null;
-    }
-    
-    // 测试随机选择
-    function testRandomSelection() {
+    // 预览测试
+    function testPreview() {
         const url = getRandomMediaUrl();
         if (!url) {
-            showStatus('❌ 没有可用的媒体URL', 'error');
+            showStatus('❌ 没有可用的URL，请先添加URL', 'error');
             return;
         }
         
-        const isVideo = isVideoUrl(url);
-        showStatus(`✅ 随机选择: ${url.substring(0, 50)}...`, 'success');
+        showStatus(`🔍 测试URL: ${url}`, 'info');
         
-        // 显示预览（确保图片显示）
-        const previewHtml = `
-            <div style="border: 2px solid #4CAF50; padding: 10px; margin-top: 10px; border-radius: 5px;">
-                <p><strong>🎲 随机选择预览</strong></p>
-                ${isVideo ? 
-                    `<video src="${url}" controls style="width: 200px; height: 150px; background: #000;"></video>` :
-                    `<img src="${url}" style="max-width: 200px; max-height: 150px; border: 1px solid #ccc;" 
-                         onload="console.log('图片加载成功')" 
-                         onerror="console.log('图片加载失败')">`
-                }
-                <p style="word-break: break-all; font-size: 10px; margin: 5px 0;">${url}</p>
-            </div>
-        `;
+        // 创建图片元素并确保加载
+        const img = new Image();
+        img.src = url;
+        img.style.maxWidth = '250px';
+        img.style.maxHeight = '200px';
+        img.style.border = '2px solid #007bff';
+        img.style.borderRadius = '5px';
+        img.style.margin = '5px';
         
-        $('#ump-preview').html(previewHtml);
+        img.onload = function() {
+            console.log('✅ 图片加载成功');
+            $('#ump-preview').html(`
+                <div style="border: 2px solid #28a745; padding: 15px; border-radius: 5px; text-align: center;">
+                    <p style="color: #28a745; font-weight: bold;">✅ 预览测试成功</p>
+                    <div>${img.outerHTML}</div>
+                    <p style="word-break: break-all; font-size: 11px; margin: 10px 0; color: #666;">${url}</p>
+                </div>
+            `);
+            showStatus('✅ 图片预览加载成功', 'success');
+        };
+        
+        img.onerror = function() {
+            console.error('❌ 图片加载失败');
+            $('#ump-preview').html(`
+                <div style="border: 2px solid #dc3545; padding: 15px; border-radius: 5px; text-align: center;">
+                    <p style="color: #dc3545; font-weight: bold;">❌ 预览测试失败</p>
+                    <div style="width: 250px; height: 200px; background: #f8d7da; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+                        <span style="color: #721c24;">图片加载失败</span>
+                    </div>
+                    <p style="word-break: break-all; font-size: 11px; margin: 10px 0; color: #666;">${url}</p>
+                </div>
+            `);
+            showStatus('❌ 图片加载失败，请检查URL', 'error');
+        };
     }
     
     // 创建媒体元素
     function createMediaElement(url) {
-        const isVideo = isVideoUrl(url);
-        const element = isVideo ? document.createElement('video') : document.createElement('img');
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = 'AI回复图片';
+        img.style.width = config.imageWidth;
+        img.style.height = config.imageHeight;
+        img.style.maxWidth = '100%';
+        img.style.borderRadius = '8px';
+        img.style.border = '2px solid #dee2e6';
+        img.style.cursor = 'pointer';
+        img.style.display = 'block';
+        img.style.margin = '10px auto';
         
-        element.src = url;
-        
-        if (isVideo) {
-            element.style.width = config.videoWidth;
-            element.style.height = config.videoHeight;
-            element.controls = true;
-            element.muted = true;
-            element.style.background = '#000';
-        } else {
-            element.style.width = config.imageWidth;
-            element.style.height = config.imageHeight;
-            element.style.objectFit = 'contain';
-        }
-        
-        element.style.borderRadius = '5px';
-        element.style.border = '1px solid #ddd';
-        element.style.cursor = 'pointer';
-        element.style.display = 'block';
-        element.style.margin = '5px auto';
-        
-        element.onclick = () => window.open(url, '_blank');
-        element.onerror = function() {
-            console.error('媒体加载失败:', url);
-            this.style.opacity = '0.3';
-            this.style.borderColor = 'red';
+        img.onclick = function() {
+            window.open(url, '_blank');
         };
         
-        return element;
+        img.onerror = function() {
+            console.error('❌ 媒体元素加载失败:', url);
+            this.style.opacity = '0.5';
+            this.style.borderColor = '#dc3545';
+            this.title = '图片加载失败';
+        };
+        
+        return img;
     }
     
     // 插入媒体到消息
     function insertMediaToMessage(messageId, isTest = false) {
+        console.log('📝 开始插入媒体到消息:', messageId);
+        
+        // 检查是否已插入
         if (!isTest && insertedMessages.has(messageId)) {
+            console.log('⏩ 跳过已插入的消息');
             return false;
         }
         
+        // 获取随机URL
         const url = getRandomMediaUrl();
         if (!url) {
-            console.warn('插入失败：没有可用的URL');
+            console.warn('❌ 插入失败：没有可用的URL');
             return false;
         }
         
+        // 查找消息元素
         const messageElement = document.querySelector(`#mes_${messageId} .mes_text`);
         if (!messageElement) {
-            console.warn('插入失败：找不到消息元素');
+            console.warn('❌ 插入失败：找不到消息元素');
             return false;
         }
         
+        // 创建容器和媒体元素
         const container = document.createElement('div');
-        container.className = 'media-insert';
+        container.className = 'media-insert-container';
+        container.style.marginTop = '15px';
+        container.style.textAlign = 'center';
         
         if (isTest) {
-            container.style.borderLeft = '3px solid #4CAF50';
+            container.style.borderLeft = '3px solid #28a745';
             container.style.paddingLeft = '10px';
         }
         
         const mediaElement = createMediaElement(url);
         container.appendChild(mediaElement);
         
-        // 根据插入位置决定插入方式
-        const textContent = messageElement.textContent || '';
-        const paragraphs = textContent.split('\n').filter(p => p.trim());
+        // 插入到消息中
+        messageElement.appendChild(container);
         
-        if (config.insertPosition === 'inline' && paragraphs.length > 1) {
-            // 段落中插入：在中间段落插入
-            const insertIndex = Math.floor(paragraphs.length / 2);
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = messageElement.innerHTML;
-            
-            // 找到第insertIndex个段落的位置插入
-            let currentIndex = 0;
-            let inserted = false;
-            
-            for (const node of tempDiv.childNodes) {
-                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                    currentIndex++;
-                    if (currentIndex === insertIndex) {
-                        const mediaContainer = container.cloneNode(true);
-                        mediaContainer.style.margin = '10px 0';
-                        tempDiv.insertBefore(mediaContainer, node.nextSibling);
-                        inserted = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (inserted) {
-                messageElement.innerHTML = tempDiv.innerHTML;
-            } else {
-                // 备用：插入到末尾
-                messageElement.appendChild(container);
-            }
-        } else if (config.insertPosition === 'before') {
-            messageElement.insertBefore(container, messageElement.firstChild);
-        } else if (config.insertPosition === 'random' && Math.random() > 0.5) {
-            messageElement.insertBefore(container, messageElement.firstChild);
-        } else {
-            messageElement.appendChild(container);
-        }
-        
+        // 标记为已插入
         if (!isTest) {
             insertedMessages.add(messageId);
         }
@@ -452,63 +385,73 @@
     
     // 测试插入
     function testInsert() {
+        console.log('🧪 开始测试插入...');
+        
+        // 查找最新的AI消息
         const messages = document.querySelectorAll('.mes');
         let lastAIMessage = null;
         
         for (let i = messages.length - 1; i >= 0; i--) {
-            if (!messages[i].querySelector('.mes_user')) {
-                lastAIMessage = messages[i];
+            const message = messages[i];
+            if (!message.querySelector('.mes_user')) {
+                lastAIMessage = message;
                 break;
             }
         }
         
         if (!lastAIMessage) {
-            showStatus('❌ 找不到AI回复消息', 'error');
+            showStatus('❌ 找不到AI回复消息，请先让AI回复一条消息', 'error');
             return;
         }
         
         const messageId = lastAIMessage.id.replace('mes_', '');
+        console.log('找到AI消息:', messageId);
+        
         const success = insertMediaToMessage(messageId, true);
         
         if (success) {
-            showStatus('✅ 测试插入成功！', 'success');
-            lastAIMessage.scrollIntoView({ behavior: 'smooth' });
+            showStatus('✅ 测试插入成功！已在AI回复后添加图片', 'success');
+            // 滚动到消息位置
+            lastAIMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
         } else {
-            showStatus('❌ 插入失败，请检查URL配置', 'error');
+            showStatus('❌ 插入失败，请检查URL配置和网络连接', 'error');
         }
     }
     
     // AI回复时自动插入
     function onMessageRendered(event, data) {
-        if (!config.enabled || !config.autoInsert || data.message.is_user) return;
+        if (!config.enabled || !config.autoInsert || data.message.is_user) {
+            return;
+        }
         
+        console.log('🤖 AI回复事件触发:', data.message.id);
+        
+        // 延迟插入确保消息完全渲染
         setTimeout(() => {
             insertMediaToMessage(data.message.id, false);
-        }, 300);
+        }, 500);
     }
     
     // 初始化
     function initialize() {
+        console.log('🔧 初始化插件...');
+        
+        // 加载配置
         loadConfig();
+        
+        // 创建设置面板
         createSettingsPanel();
         
+        // 注册事件监听
         if (window.SillyTavern && SillyTavern.events) {
             SillyTavern.events.on('message-rendered', onMessageRendered);
+            console.log('✅ 事件监听器已注册');
         }
         
-        // 清理过期记录
-        setInterval(() => {
-            if (insertedMessages.size > 50) {
-                const array = Array.from(insertedMessages);
-                insertedMessages = new Set(array.slice(-30));
-            }
-        }, 30000);
-        
-        console.log('✅ 稳定版插件初始化完成');
-        showStatus('✅ 插件已就绪，请测试功能', 'success');
+        console.log('🎊 插件初始化完成');
     }
     
-    // 启动
+    // 启动插件
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initialize);
     } else {
