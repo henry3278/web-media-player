@@ -1,29 +1,10 @@
 {
   "name": "st-web-media-grabber",
   "version": "1.0.0",
-  "description": "网页媒体抓取插件 - 支持图片和视频抓取",
+  "description": "网页媒体抓取插件",
   "type": "extension",
-  "author": "Web Media Grabber",
+  "author": "Media Grabber",
   "entry": "./grabber.js",
-  "adminPanel": "./media-admin.js",
-  "config": "./config.json",
-  "dependencies": [],
-  "permissions": ["network", "filesystem"],
-  "settings": {
-    "enabled": {
-      "type": "boolean",
-      "default": true,
-      "label": "启用插件"
-    },
-    "targetWebsites": {
-      "type": "array",
-      "default": ["https://www.kchai.org/"],
-      "label": "目标网站"
-    },
-    "mediaTypes": {
-      "type": "array",
-      "default": ["image", "video"],
-      "label": "媒体类型"
-    }
-  }
+  "adminPanel": "./media-panel.js",
+  "config": "./config.json"
 }
