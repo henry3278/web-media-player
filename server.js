@@ -1,24 +1,23 @@
-// 文件名: server.js (负责读取本地文件列表)
+// 文件名: server.js (v8.0.1 - 增加诊断日志)
 const fs = require('fs');
 const path = require('path');
 
 class LocalMediaPlayerServer {
-    // 插件的上下文对象，由SillyTavern在创建实例时传入
     context;
 
     constructor(context) {
         this.context = context;
+        // 【诊断日志1】: 确认构造函数被调用
+        console.log('[Local Media Player Server] Constructor loaded. Plugin path:', this.context.pluginPath);
     }
 
-    /**
-     * onLoad - 这是服务器端脚本的主入口函数
-     */
     onLoad() {
-        // 获取SillyTavern的Express路由器
+        // 【诊断日志2】: 确认 onLoad 方法被执行
+        console.log('[Local Media Player Server] onLoad started.');
+        
         const router = this.context.router;
         const pluginPath = this.context.pluginPath;
 
-        // 创建一个新的API端点，用于获取文件列表
         router.get('/api/extensions/local-media-player/files', (req, res) => {
             try {
                 const photosPath = path.join(pluginPath, 'photos');
@@ -27,21 +26,20 @@ class LocalMediaPlayerServer {
                 let photos = [];
                 let videos = [];
 
-                // 读取照片文件夹
                 if (fs.existsSync(photosPath)) {
                     photos = fs.readdirSync(photosPath)
                         .filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file))
-                        .map(file => `/extensions/third-party/web-media-player/photos/${file}`);
+                        .map(file => `/extensions/third-party/web-media-player/photos/${encodeURIComponent(file)}`);
                 }
 
-                // 读取视频文件夹
                 if (fs.existsSync(videosPath)) {
                     videos = fs.readdirSync(videosPath)
                         .filter(file => /\.(mp4|webm|ogg|mov)$/i.test(file))
-                        .map(file => `/extensions/third-party/web-media-player/videos/${file}`);
+                        .map(file => `/extensions/third-party/web-media-player/videos/${encodeURIComponent(file)}`);
                 }
-
-                // 返回JSON格式的文件列表
+                
+                // 【诊断日志4】: 确认文件被找到
+                console.log(`[Local Media Player Server] Found ${photos.length} photos and ${videos.length} videos.`);
                 res.json({ photos, videos });
 
             } catch (error) {
@@ -50,9 +48,9 @@ class LocalMediaPlayerServer {
             }
         });
 
-        console.log('[Local Media Player Server] API endpoint /api/extensions/local-media-player/files registered.');
+        // 【诊断日志3】: 确认API端点已注册
+        console.log('[Local Media Player Server] API endpoint /api/extensions/local-media-player/files registered successfully.');
     }
 }
 
-// 导出类，供SillyTavern加载
 module.exports = LocalMediaPlayerServer;
