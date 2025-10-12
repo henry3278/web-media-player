@@ -1,16 +1,17 @@
 {
   "name": "ai-tavern-image-grabber",
-  "version": "1.0.0",
-  "description": "AI云酒馆图片抓取插件 - 集成管理界面版",
+  "version": "1.1.0",
+  "description": "AI云酒馆图片抓取插件 - 修复版",
   "main": "installer.js",
   "bin": {
     "install-tavern-image-grabber": "./installer.js"
   },
   "scripts": {
     "install": "node installer.js",
-    "postinstall": "echo '✅ 插件安装完成！请重启云酒馆服务。'"
+    "postinstall": "echo '✅ 插件安装完成！请重启云酒馆服务。'",
+    "fix": "node installer.js --fix"
   },
-  "keywords": ["ai", "tavern", "image", "grabber", "plugin"],
+  "keywords": ["ai", "tavern", "image", "grabber", "plugin", "extension"],
   "author": "AI云酒馆",
   "license": "MIT",
   "dependencies": {
