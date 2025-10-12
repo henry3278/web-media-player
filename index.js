@@ -1,8 +1,7 @@
-// 文件名: index.js (最终版 v4.0 - 官方文档规范)
+// 文件名: index.js (最终版 v5.0 - 模仿 st_image_player)
 (function () {
     const extensionName = 'web-media-player';
-    const extensionAuthor = 'Your Name & AI Assistant';
-    const extensionVersion = '4.0.0';
+    const extensionVersion = '5.0.0';
 
     // 默认设置
     const defaultSettings = {
@@ -14,70 +13,73 @@
     };
 
     let settings = { ...defaultSettings };
-    let context = null; // 保存上下文
-
-    // 将更新设置的函数暴露到全局，以便在HTML中通过onchange调用
-    // 这是最稳健、最能避免时机问题的方法
-    if (!window.WebMediaPlayer) {
-        window.WebMediaPlayer = {};
-    }
-    window.WebMediaPlayer.updateSetting = async function(element, key, type) {
-        const value = type === 'checkbox' ? element.checked : element.value;
-        settings[key] = value;
-        if (context) {
-            await context.saveSettings(settings);
-        }
-    };
 
     /**
-     * onLoad - 这是官方文档规范下的主入口函数
+     * 步骤1: 构建并注入设置面板的HTML
      */
-    async function onExtensionLoaded(ctx) {
-        context = ctx; // 保存上下文以供他用
-        settings = { ...defaultSettings, ...(await context.loadSettings()) };
-
-        // 使用最安全的方式构建HTML，将事件处理器直接写在HTML里
+    function addSettingsPanel() {
         const settingsHtml = `
-            <div class="list-group-item">
+            <div class="list-group-item" id="web-media-player-settings">
                 <div class="d-flex w-100 justify-content-between">
                     <h5 class="mb-1">Web Media Player</h5>
                 </div>
                 <p class="mb-1">Displays media from a web source based on triggers in AI messages. (v${extensionVersion})</p>
-            </div>
-            <div class="list-group-item">
-                <label for="wmp-enabled">Enable Plugin</label>
-                <input type="checkbox" id="wmp-enabled" onchange="window.WebMediaPlayer.updateSetting(this, 'enabled', 'checkbox')" ${settings.enabled ? 'checked' : ''}>
-            </div>
-            <div class="list-group-item">
-                <label for="wmp-sourceUrl">Source URL / API Endpoint</label>
-                <input type="text" id="wmp-sourceUrl" class="form-control" value="${settings.sourceUrl}" oninput="window.WebMediaPlayer.updateSetting(this, 'sourceUrl', 'text')" placeholder="e.g., https://api.example.com/search?q=">
-                <small class="form-text text-muted">The search query will be appended to this URL.</small>
-            </div>
-            <div class="list-group-item">
-                <label for="wmp-startTrigger">Start Trigger</label>
-                <input type="text" id="wmp-startTrigger" class="form-control" value="${settings.startTrigger}" oninput="window.WebMediaPlayer.updateSetting(this, 'startTrigger', 'text')">
-            </div>
-            <div class="list-group-item">
-                <label for="wmp-endTrigger">End Trigger</label>
-                <input type="text" id="wmp-endTrigger" class="form-control" value="${settings.endTrigger}" oninput="window.WebMediaPlayer.updateSetting(this, 'endTrigger', 'text')">
-            </div>
-            <div class="list-group-item">
-                <label for="wmp-removeTriggers">Remove triggers after display</label>
-                <input type="checkbox" id="wmp-removeTriggers" onchange="window.WebMediaPlayer.updateSetting(this, 'removeTriggers', 'checkbox')" ${settings.removeTriggers ? 'checked' : ''}>
+                <div class="form-group">
+                    <label for="wmp-enabled">Enable Plugin</label>
+                    <input type="checkbox" id="wmp-enabled" ${settings.enabled ? 'checked' : ''}>
+                </div>
+                <div class="form-group">
+                    <label for="wmp-sourceUrl">Source URL / API Endpoint</label>
+                    <input type="text" id="wmp-sourceUrl" class="form-control" value="${settings.sourceUrl}" placeholder="e.g., https://api.example.com/search?q=">
+                    <small class="form-text text-muted">The search query will be appended to this URL.</small>
+                </div>
+                <div class="form-group">
+                    <label for="wmp-startTrigger">Start Trigger</label>
+                    <input type="text" id="wmp-startTrigger" class="form-control" value="${settings.startTrigger}">
+                </div>
+                <div class="form-group">
+                    <label for="wmp-endTrigger">End Trigger</label>
+                    <input type="text" id="wmp-endTrigger" class="form-control" value="${settings.endTrigger}">
+                </div>
+                <div class="form-group">
+                    <label for="wmp-removeTriggers">Remove triggers after display</label>
+                    <input type="checkbox" id="wmp-removeTriggers" ${settings.removeTriggers ? 'checked' : ''}>
+                </div>
             </div>
         `;
+        // 直接将HTML注入到指定的容器中
+        $('#extensions_settings').append(settingsHtml);
+    }
 
-        // 添加设置面板
-        context.addSettings(settingsHtml);
-
-        // 监听消息渲染事件
-        SillyTavern.events.on('message-rendered', (type, data) => displayMediaInMessage(type, data));
-        
-        console.log(`[${extensionName} v${extensionVersion}] Loaded successfully following official documentation.`);
+    /**
+     * 步骤2: 为设置项绑定事件监听器
+     */
+    function addSettingsEventListeners() {
+        // 使用 jQuery 的 .on() 方法来处理事件
+        $('#web-media-player-settings').on('change', '#wmp-enabled', async function() {
+            settings.enabled = $(this).is(':checked');
+            await SillyTavern.extension.saveSettings(extensionName, settings);
+        });
+        $('#web-media-player-settings').on('input', '#wmp-sourceUrl', async function() {
+            settings.sourceUrl = $(this).val();
+            await SillyTavern.extension.saveSettings(extensionName, settings);
+        });
+        $('#web-media-player-settings').on('input', '#wmp-startTrigger', async function() {
+            settings.startTrigger = $(this).val();
+            await SillyTavern.extension.saveSettings(extensionName, settings);
+        });
+        $('#web-media-player-settings').on('input', '#wmp-endTrigger', async function() {
+            settings.endTrigger = $(this).val();
+            await SillyTavern.extension.saveSettings(extensionName, settings);
+        });
+        $('#web-media-player-settings').on('change', '#wmp-removeTriggers', async function() {
+            settings.removeTriggers = $(this).is(':checked');
+            await SillyTavern.extension.saveSettings(extensionName, settings);
+        });
     }
 
     // -------------------------------------------------------------------------
-    // 核心功能逻辑
+    // 核心功能逻辑 (这部分与UI加载方式无关)
     // -------------------------------------------------------------------------
 
     async function displayMediaInMessage(type, data) {
@@ -148,9 +150,26 @@
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    // 使用官方文档指定的函数进行注册
-    SillyTavern.extension.register(extensionName, extensionAuthor, {
-        onExtensionLoaded: onExtensionLoaded,
+    /**
+     * 步骤3: 主入口 - 等待DOM加载完毕后执行
+     */
+    $(document).ready(async function () {
+        try {
+            // 首先加载设置
+            const loadedSettings = await SillyTavern.extension.loadSettings(extensionName);
+            settings = { ...defaultSettings, ...loadedSettings };
+        } catch (error) {
+            console.error(`[${extensionName}] Error loading settings:`, error);
+        }
+
+        // 然后创建设置面板并绑定事件
+        addSettingsPanel();
+        addSettingsEventListeners();
+
+        // 最后，监听聊天消息
+        SillyTavern.events.on('message-rendered', displayMediaInMessage);
+
+        console.log(`[${extensionName} v${extensionVersion}] Loaded successfully using jQuery.ready() method.`);
     });
 
 })();
