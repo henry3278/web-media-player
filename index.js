@@ -10,6 +10,12 @@ export default {
     styles: ['style.css'],
     
     async load() {
+        console.groupCollapsed('[Web Media Player] 插件加载信息');
+        console.log('插件名称:', this.name);
+        console.log('插件版本:', this.version);
+        console.log('SillyTavern版本:', window.sillytavern?.version || '未知');
+        console.log('扩展API状态:', typeof extensions !== 'undefined' ? '可用' : '不可用');
+        console.groupEnd();
         console.log('[Web Media Player] 插件开始加载');
         
         // 手动加载设置模块
