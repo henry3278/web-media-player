@@ -1,8 +1,5 @@
 {
-    "name": "Web Media Player",
-    "description": "Displays images/videos from a web source when a trigger keyword appears in the AI's message.",
-    "author": "Your Name & AI Assistant",
-    "version": "1.0.0",
-    "entry": "script.js",
-    "style": "style.css"
+    "name": "Web Media Player (DIAGNOSTIC)",
+    "version": "9.9.9",
+    "entry": "script.js"
 }
