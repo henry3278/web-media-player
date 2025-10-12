@@ -1,9 +1,0 @@
-{
-  "name": "st-web-media-grabber",
-  "version": "1.0.0",
-  "description": "网页媒体抓取插件",
-  "main": "grabber.js",
-  "scripts": {
-    "install": "node installer.js"
-  }
-}
