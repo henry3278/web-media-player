@@ -1,8 +1,9 @@
+// 文件名: index.js (最终版 v2.2)
 (function () {
     // 插件元数据
-    const extensionName = 'web-media-player'; // 内部名称，用于设置等
+    const extensionName = 'web-media-player';
     const extensionAuthor = 'Your Name & AI Assistant';
-    const extensionVersion = '2.0.0';
+    const extensionVersion = '2.2.0';
 
     // 默认设置
     const defaultSettings = {
@@ -13,12 +14,13 @@
         removeTriggers: true,
     };
 
-    // 插件主设置对象
     let settings = { ...defaultSettings };
+    let context = null; // 保存上下文对象
 
-    /**
-     * 【核心功能 - 你需要在这里编写采集逻辑】
-     */
+    // =================================================================================
+    // 核心功能逻辑 (这部分与UI无关，比较稳定)
+    // =================================================================================
+
     async function fetchMediaUrl(query) {
         if (!settings.sourceUrl) {
             console.warn(`[${extensionName}] Source URL is not set.`);
@@ -36,9 +38,6 @@
         }
     }
 
-    /**
-     * 在消息中查找并显示媒体
-     */
     async function displayMediaInMessage(type, data) {
         const message = data.message;
         if (!settings.enabled || message.is_user || !message.mes) return;
@@ -91,13 +90,15 @@
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    /**
-     * 插件加载时执行的核心函数
-     */
-    async function onExtensionLoaded(context) {
-        settings = { ...defaultSettings, ...(await context.loadSettings()) };
+    // =================================================================================
+    // 设置面板的构建与事件处理 (这是我们重构的重点)
+    // =================================================================================
 
-        const settingsHtml = `
+    /**
+     * 步骤1: 创建设置面板的HTML字符串
+     */
+    function buildSettingsHtml() {
+        return `
             <div class="list-group-item">
                 <div class="d-flex w-100 justify-content-between">
                     <h5 class="mb-1">Web Media Player</h5>
@@ -110,24 +111,61 @@
             <div class="list-group-item"><label for="wmp-endTrigger">End Trigger</label><input type="text" id="wmp-endTrigger" class="wmp-setting form-control" value="${settings.endTrigger}"></div>
             <div class="list-group-item"><label for="wmp-removeTriggers">Remove triggers after display</label><input type="checkbox" id="wmp-removeTriggers" class="wmp-setting" ${settings.removeTriggers ? 'checked' : ''}></div>
         `;
+    }
 
-        context.addSettings(settingsHtml);
-
+    /**
+     * 步骤2: 为设置面板的元素绑定事件监听器
+     */
+    function addSettingsEventListeners() {
         document.querySelectorAll('.wmp-setting').forEach(element => {
             element.addEventListener('change', async (event) => {
                 const key = event.target.id.replace('wmp-', '');
                 const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
                 settings[key] = value;
-                await context.saveSettings(settings);
+                // 使用保存的 context 对象来保存设置
+                if (context) {
+                    await context.saveSettings(settings);
+                }
             });
         });
+    }
 
-        SillyTavern.events.on('message-rendered', (type, data) => displayMediaInMessage(type, data));
-        console.log(`[${extensionName}] v${extensionVersion} loaded successfully.`);
+    // =================================================================================
+    // 插件主入口
+    // =================================================================================
+
+    /**
+     * 插件加载时执行的核心函数
+     */
+    async function onExtensionLoaded(ctx) {
+        try {
+            // 保存上下文，以便其他函数使用
+            context = ctx;
+
+            // 加载设置
+            settings = { ...defaultSettings, ...(await context.loadSettings()) };
+
+            // 构建并添加设置面板
+            const settingsHtml = buildSettingsHtml();
+            context.addSettings(settingsHtml);
+
+            // 为新添加的元素绑定事件
+            addSettingsEventListeners();
+
+            // 监听SillyTavern的消息渲染事件
+            SillyTavern.events.on('message-rendered', (type, data) => displayMediaInMessage(type, data));
+            
+            console.log(`[${extensionName}] v${extensionVersion} loaded successfully and settings panel created.`);
+
+        } catch (error) {
+            console.error(`[${extensionName}] An error occurred during extension loading:`, error);
+            alert(`[${extensionName}] Failed to load. Check F12 console for errors.`);
+        }
     }
 
     // 使用 SillyTavern 的标准方式注册插件
     SillyTavern.extension.register(extensionName, extensionAuthor, {
         onExtensionLoaded: onExtensionLoaded,
     });
+
 })();
