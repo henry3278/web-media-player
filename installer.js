@@ -14,7 +14,7 @@ class TavernPluginInstaller {
   }
 
   async install() {
-    console.log('🚀 AI云酒馆图片抓取插件安装程序\n');
+    console.log('🚀 AI云酒馆图片抓取插件安装程序 (无依赖版)\n');
     
     try {
       this.showBanner();
@@ -57,7 +57,6 @@ class TavernPluginInstaller {
       currentDir = path.dirname(currentDir);
     }
     
-    // 使用当前工作目录作为备选
     const fallbackDir = process.cwd();
     console.log(`   ⚠️  使用当前目录: ${fallbackDir}`);
     return fallbackDir;
@@ -67,14 +66,11 @@ class TavernPluginInstaller {
     console.log('🔍 检测扩展目录结构...');
     
     const possibleLocations = [
-      // 标准云酒馆结构
       path.join(this.tavernRoot, 'public', 'scripts', 'extensions', 'third-party', this.pluginName),
       path.join(this.tavernRoot, 'public', 'extensions', this.pluginName),
       path.join(this.tavernRoot, 'extensions', this.pluginName),
       path.join(this.tavernRoot, 'plugins', this.pluginName),
       path.join(this.tavernRoot, 'src', 'extensions', this.pluginName),
-      
-      // 备用位置
       path.join(this.tavernRoot, 'dist', 'extensions', this.pluginName),
       path.join(this.tavernRoot, 'build', 'extensions', this.pluginName)
     ];
@@ -87,7 +83,6 @@ class TavernPluginInstaller {
       }
     }
     
-    // 创建默认目录
     const defaultLocation = path.join(this.tavernRoot, 'public', 'scripts', 'extensions', 'third-party', this.pluginName);
     console.log(`   📍 创建默认目录: ${path.relative(this.tavernRoot, defaultLocation)}`);
     return defaultLocation;
@@ -96,7 +91,6 @@ class TavernPluginInstaller {
   async diagnoseEnvironment() {
     console.log('\n🔧 环境诊断...');
     
-    // 检查Node.js版本
     const nodeVersion = process.version;
     console.log(`   ✅ Node.js版本: ${nodeVersion}`);
     
@@ -104,7 +98,6 @@ class TavernPluginInstaller {
       throw new Error('Node.js版本需要14.0或更高');
     }
     
-    // 检查关键目录
     const criticalDirs = [
       this.tavernRoot,
       path.dirname(this.extensionsDir)
@@ -124,7 +117,6 @@ class TavernPluginInstaller {
       }
     }
     
-    // 检查是否已安装
     if (fs.existsSync(this.extensionsDir) && !this.isFixMode) {
       console.log(`   ⚠️  插件已存在: ${path.relative(this.tavernRoot, this.extensionsDir)}`);
       const shouldContinue = await this.promptContinue('是否继续安装（将覆盖现有文件）？');
@@ -158,7 +150,6 @@ class TavernPluginInstaller {
     
     console.log(`   修复目录: ${path.relative(this.tavernRoot, this.extensionsDir)}`);
     
-    // 检查并修复关键文件
     const criticalFiles = ['manifest.json', 'grabber.js', 'config.json'];
     let fixedCount = 0;
     
@@ -176,7 +167,6 @@ class TavernPluginInstaller {
       console.log('   ✅ 未发现需要修复的文件');
     }
     
-    // 重新注册扩展
     await this.registerExtension();
   }
 
@@ -197,20 +187,17 @@ class TavernPluginInstaller {
   async createExtensionStructure() {
     console.log('\n📁 创建扩展结构...');
     
-    // 确保所有父目录存在
     const parentDir = path.dirname(this.extensionsDir);
     if (!fs.existsSync(parentDir)) {
       fs.mkdirSync(parentDir, { recursive: true });
       console.log(`   ✅ 创建父目录: ${path.relative(this.tavernRoot, parentDir)}`);
     }
     
-    // 创建扩展目录
     if (!fs.existsSync(this.extensionsDir)) {
       fs.mkdirSync(this.extensionsDir, { recursive: true });
       console.log(`   ✅ 创建扩展目录: ${path.relative(this.tavernRoot, this.extensionsDir)}`);
     }
     
-    // 清理目录（保留配置文件）
     if (fs.existsSync(this.extensionsDir)) {
       try {
         const items = fs.readdirSync(this.extensionsDir);
@@ -259,14 +246,14 @@ class TavernPluginInstaller {
     const templates = {
       'manifest.json': () => JSON.stringify({
         "name": "ai-tavern-image-grabber",
-        "version": "1.1.0",
-        "description": "AI云酒馆图片抓取插件",
+        "version": "2.0.0",
+        "description": "AI云酒馆图片抓取插件 - 无依赖版",
         "type": "extension",
         "author": "AI云酒馆",
         "entry": "./grabber.js",
         "adminEntry": "./admin-component.vue",
         "config": "./config.json",
-        "dependencies": ["axios", "cheerio"],
+        "dependencies": [],
         "permissions": ["network", "filesystem"],
         "settings": {
           "enabled": {
@@ -285,7 +272,7 @@ class TavernPluginInstaller {
       'config.json': () => JSON.stringify({
         "enabled": true,
         "targetWebsite": "https://www.kchai.org/",
-        "imageSelectors": ["img[src*='.jpg']", "img[src*='.png']", "img[src*='.webp']"],
+        "imageSelectors": ["img"],
         "excludeKeywords": ["icon", "logo", "ad", "spacer"],
         "insertPosition": "after_first_sentence",
         "maxImageWidth": "400px",
@@ -305,21 +292,8 @@ class TavernPluginInstaller {
   }
 
   async installDependencies() {
-    console.log('\n📦 安装依赖...');
-    
-    const dependencies = ['axios@^1.6.0', 'cheerio@^1.0.0-rc.12'];
-    
-    for (const dep of dependencies) {
-      try {
-        console.log(`   安装 ${dep}...`);
-        execSync(`cd "${this.tavernRoot}" && npm install ${dep} --save`, {
-          stdio: 'inherit',
-          timeout: 120000
-        });
-      } catch (error) {
-        console.log(`   ⚠️  安装 ${dep} 失败: ${error.message}`);
-      }
-    }
+    console.log('\n📦 检查依赖...');
+    console.log('   ✅ 无依赖版本，无需安装外部包');
   }
 
   async patchMainApplication() {
@@ -356,7 +330,6 @@ class TavernPluginInstaller {
       let content = fs.readFileSync(filePath, 'utf8');
       let modified = false;
       
-      // 添加引入语句
       if (!content.includes('ai-tavern-image-grabber')) {
         const importStatement = `\n// AI云酒馆图片抓取插件\nconst imageGrabber = require('./${path.relative(this.tavernRoot, path.join(this.extensionsDir, 'grabber.js'))}');\n`;
         
@@ -368,7 +341,6 @@ class TavernPluginInstaller {
         }
       }
       
-      // 添加API路由
       if (!content.includes('/api/plugins/image-grabber')) {
         const routeStatement = `\n// 图片抓取插件API路由\napp.use('/api/plugins/image-grabber', require('./${path.relative(this.tavernRoot, path.join(this.extensionsDir, 'admin-api.js'))}'));\n`;
         
@@ -381,7 +353,6 @@ class TavernPluginInstaller {
       }
       
       if (modified) {
-        // 备份原文件
         const backupFile = filePath + '.backup.' + Date.now();
         fs.copyFileSync(filePath, backupFile);
         
@@ -435,16 +406,16 @@ class TavernPluginInstaller {
       
       const extensionInfo = {
         name: this.pluginName,
-        version: "1.1.0",
+        version: "2.0.0",
         enabled: true,
         path: path.relative(this.tavernRoot, this.extensionsDir),
         manifest: "./manifest.json",
         entry: "./grabber.js",
-        config: "./config.json"
+        config: "./config.json",
+        dependencies: []
       };
       
       if (Array.isArray(registry)) {
-        // 数组格式的注册表
         const existingIndex = registry.findIndex(ext => ext.name === this.pluginName);
         if (existingIndex >= 0) {
           registry[existingIndex] = extensionInfo;
@@ -452,7 +423,6 @@ class TavernPluginInstaller {
           registry.push(extensionInfo);
         }
       } else {
-        // 对象格式的注册表
         registry[this.pluginName] = extensionInfo;
       }
       
@@ -479,14 +449,14 @@ class TavernPluginInstaller {
   }
 
   async promptContinue(question) {
-    return true; // 简化版本，总是继续
+    return true;
   }
 
   showBanner() {
     console.log(`
     ╔══════════════════════════════════════════════╗
     ║           AI云酒馆图片抓取插件               ║
-    ║               修复版 v1.1.0                  ║
+    ║               无依赖版 v2.0.0                ║
     ╚══════════════════════════════════════════════╝
     `);
   }
@@ -502,35 +472,17 @@ class TavernPluginInstaller {
 
 3. 测试图片抓取功能
 
-4. 如有问题运行修复命令:
-   npx github:yourusername/ai-tavern-image-grabber --fix
+4. 无需安装任何依赖即可使用！
     `);
   }
 
   showTroubleshootingTips(error) {
     console.log('\n🔧 故障排除建议:');
     console.log(`
-• 检查目录权限: sudo chown -R $USER "${this.tavernRoot}"
-• 手动创建manifest.json文件
-• 尝试修复模式: npm run fix
-• 查看详细日志: 设置 DEBUG=tavern-installer 环境变量
+• 检查目录权限
+• 尝试修复模式: npx github:yourusername/ai-tavern-image-grabber --fix
+• 查看详细日志
     `);
-    
-    if (error.message.includes('manifest.json')) {
-      console.log('\n📋 Manifest文件问题解决方案:');
-      console.log(`
-1. 手动创建manifest.json:
-   echo '${JSON.stringify({
-     "name": "ai-tavern-image-grabber",
-     "version": "1.1.0",
-     "description": "AI云酒馆图片抓取插件",
-     "type": "extension",
-     "entry": "./grabber.js"
-   }, null, 2)}' > "${path.join(this.extensionsDir, 'manifest.json')}"
-
-2. 重新运行安装程序
-      `);
-    }
   }
 
   showManualIntegrationGuide() {
@@ -550,7 +502,6 @@ class TavernPluginInstaller {
   }
 }
 
-// 运行安装
 if (require.main === module) {
   new TavernPluginInstaller().install().catch(console.error);
 }
