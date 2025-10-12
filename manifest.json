@@ -1,7 +1,5 @@
 {
-    "display_name": "媒体播放器 (稳定版)",
-    "author": "你的名字 & AI助手",
-    "version": "1.0.0",
-    "js": "index.js",
-    "css": "style.css"
+    "display_name": "图片插入插件",
+    "author": "Assistant",
+    "version": "1.0.0"
 }
