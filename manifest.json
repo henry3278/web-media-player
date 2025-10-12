@@ -1,13 +1,13 @@
 {
   "name": "ai-tavern-image-grabber",
-  "version": "1.1.0",
-  "description": "AI云酒馆图片抓取插件",
+  "version": "2.0.0",
+  "description": "AI云酒馆图片抓取插件 - 无依赖版",
   "type": "extension",
   "author": "AI云酒馆",
   "entry": "./grabber.js",
   "adminEntry": "./admin-component.vue",
   "config": "./config.json",
-  "dependencies": ["axios", "cheerio"],
+  "dependencies": [],
   "permissions": ["network", "filesystem"],
   "settings": {
     "enabled": {
@@ -21,7 +21,7 @@
       "label": "目标网站"
     },
     "maxImageWidth": {
-      "type": "string",
+      "type": "string", 
       "default": "400px",
       "label": "最大图片宽度"
     }
