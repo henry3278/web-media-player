@@ -1,17 +1,8 @@
 {
   "enabled": true,
   "targetWebsite": "https://www.kchai.org/",
-  "imageSelectors": [
-    "img[src*='.jpg']",
-    "img[src*='.png']",
-    "img[src*='.webp']"
-  ],
-  "excludeKeywords": [
-    "icon",
-    "logo",
-    "ad",
-    "spacer"
-  ],
+  "imageSelectors": ["img"],
+  "excludeKeywords": ["icon", "logo", "ad", "spacer"],
   "insertPosition": "after_first_sentence",
   "maxImageWidth": "400px",
   "requestTimeout": 5000,
