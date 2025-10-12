@@ -1,407 +1,367 @@
-// 文件名: index.js - 功能完整版
+// 文件名: index.js - 智能图库插件
 (function() {
-    console.log('🎯 媒体播放器插件开始加载...');
+    console.log('🏞️ 智能图库插件加载...');
     
-    const PLUGIN_NAME = 'media-player';
-    const PLUGIN_VERSION = '1.1.0';
+    const PLUGIN_NAME = 'smart-gallery';
+    const PLUGIN_VERSION = '1.0.0';
     
-    // 插件设置
-    let settings = {
+    // 默认配置
+    let config = {
         enabled: true,
-        sourceUrl: 'https://www.kchai.org/',
-        useProxy: true,
-        autoInsert: true
+        autoScan: true,
+        imageDirs: ['/uploads/images/', '/images/'], // 自动扫描的目录
+        fileExtensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
+        maxImages: 100, // 最大缓存图片数
+        insertMode: 'random' // random, sequential
     };
     
-    let mediaCache = [];
-    
-    // 等待SillyTavern环境就绪
-    function waitForSillyTavern() {
-        return new Promise((resolve) => {
-            if (window.SillyTavern) {
-                resolve();
-            } else {
-                const checkInterval = setInterval(() => {
-                    if (window.SillyTavern) {
-                        clearInterval(checkInterval);
-                        resolve();
-                    }
-                }, 100);
-            }
-        });
-    }
-    
-    // 加载保存的设置
-    async function loadSettings() {
-        try {
-            const saved = await SillyTavern.extension.loadSettings(PLUGIN_NAME);
-            if (saved) {
-                settings = { ...settings, ...saved };
-                console.log('✅ 设置加载完成:', settings);
-            }
-        } catch (error) {
-            console.warn('⚠️ 加载设置失败，使用默认设置:', error);
-        }
-    }
-    
-    // 保存设置
-    async function saveSettings() {
-        try {
-            await SillyTavern.extension.saveSettings(PLUGIN_NAME, settings);
-            console.log('💾 设置已保存');
-        } catch (error) {
-            console.error('❌ 保存设置失败:', error);
-        }
-    }
+    let imageCache = [];
+    let currentIndex = 0;
     
     // 创建设置面板
     function createSettingsPanel() {
-        console.log('🛠️ 创建设置面板...');
-        
-        const extensionsArea = document.getElementById('extensions_settings');
-        if (!extensionsArea) {
-            console.error('❌ 找不到扩展设置区域');
-            return;
-        }
-        
-        const pluginHtml = `
-            <div class="list-group-item" id="media-player-settings">
-                <h5>🎨 媒体播放器 v${PLUGIN_VERSION}</h5>
-                <p style="color: green;">✅ 插件工作正常</p>
+        const html = `
+            <div class="list-group-item">
+                <h5>🏞️ 智能图库插件 v${PLUGIN_VERSION}</h5>
                 
                 <div class="form-group">
-                    <label><input type="checkbox" id="mp-enabled" ${settings.enabled ? 'checked' : ''}> 启用插件</label>
+                    <label><input type="checkbox" id="sg-enabled" ${config.enabled ? 'checked' : ''}> 启用插件</label>
                 </div>
                 
                 <div class="form-group">
-                    <label><input type="checkbox" id="mp-auto-insert" ${settings.autoInsert ? 'checked' : ''}> AI回复时自动插入图片</label>
+                    <label><input type="checkbox" id="sg-auto-scan" ${config.autoScan ? 'checked' : ''}> 自动扫描图片目录</label>
                 </div>
                 
                 <div class="form-group">
-                    <label for="mp-source-url">图片网址:</label>
-                    <input type="text" class="form-control" id="mp-source-url" value="${settings.sourceUrl}" 
-                           placeholder="https://www.kchai.org/">
-                    <small class="form-text text-muted">包含图片的网页地址</small>
+                    <label>扫描目录 (每行一个):</label>
+                    <textarea class="form-control" id="sg-dirs" rows="3">${config.imageDirs.join('\n')}</textarea>
+                    <small class="form-text text-muted">插件会自动扫描这些目录下的图片文件</small>
                 </div>
                 
                 <div class="form-group">
-                    <label><input type="checkbox" id="mp-use-proxy" ${settings.useProxy ? 'checked' : ''}> 使用代理请求</label>
-                    <small class="form-text text-muted">解决跨域问题，建议开启</small>
+                    <label>文件扩展名:</label>
+                    <input type="text" class="form-control" id="sg-extensions" value="${config.fileExtensions.join(', ')}">
                 </div>
                 
                 <div class="btn-group">
-                    <button class="btn btn-sm btn-primary" id="mp-test-fetch">🔍 测试采集</button>
-                    <button class="btn btn-sm btn-secondary" id="mp-clear-cache">🗑️ 清除缓存</button>
-                    <button class="btn btn-sm btn-success" id="mp-test-insert">➕ 测试插入</button>
+                    <button class="btn btn-sm btn-primary" id="sg-scan-now">🔍 立即扫描</button>
+                    <button class="btn btn-sm btn-secondary" id="sg-clear-cache">🗑️ 清空缓存</button>
+                    <button class="btn btn-sm btn-success" id="sg-test-insert">➕ 测试插入</button>
                 </div>
                 
-                <div id="mp-status" style="margin-top: 10px; min-height: 20px;"></div>
-                <div id="mp-preview" style="margin-top: 10px;"></div>
+                <div id="sg-status" style="margin-top: 10px;"></div>
+                <div id="sg-preview" style="margin-top: 10px;"></div>
+                <div id="sg-file-list" style="margin-top: 10px; max-height: 200px; overflow-y: auto;"></div>
             </div>
         `;
         
-        // 移除旧的设置项（如果存在）
-        const oldSettings = document.getElementById('media-player-settings');
-        if (oldSettings) {
-            oldSettings.remove();
-        }
-        
-        extensionsArea.insertAdjacentHTML('beforeend', pluginHtml);
-        console.log('✅ 设置面板创建完成');
-        
-        bindSettingsEvents();
+        $('#extensions_settings').append(html);
+        bindEvents();
     }
     
-    // 绑定设置事件
-    function bindSettingsEvents() {
-        // 启用开关
-        $('#mp-enabled').on('change', function() {
-            settings.enabled = this.checked;
-            saveSettings();
-            showStatus(`插件已${settings.enabled ? '启用' : '禁用'}`, 'success');
+    // 绑定事件
+    function bindEvents() {
+        $('#sg-enabled').on('change', function() {
+            config.enabled = this.checked;
+            saveConfig();
+            showStatus(`插件已${config.enabled ? '启用' : '禁用'}`);
         });
         
-        // 自动插入开关
-        $('#mp-auto-insert').on('change', function() {
-            settings.autoInsert = this.checked;
-            saveSettings();
-            showStatus(`自动插入已${settings.autoInsert ? '开启' : '关闭'}`, 'info');
+        $('#sg-auto-scan').on('change', function() {
+            config.autoScan = this.checked;
+            saveConfig();
         });
         
-        // 网址输入
-        $('#mp-source-url').on('input', function() {
-            settings.sourceUrl = this.value;
-            mediaCache = []; // 清空缓存
-            saveSettings();
-        });
+        $('#sg-scan-now').on('click', scanForImages);
+        $('#sg-clear-cache').on('click', clearCache);
+        $('#sg-test-insert').on('click', testInsert);
         
-        // 代理开关
-        $('#mp-use-proxy').on('change', function() {
-            settings.useProxy = this.checked;
-            saveSettings();
-        });
+        // 实时保存配置
+        $('#sg-dirs').on('input', debounce(() => {
+            config.imageDirs = $('#sg-dirs').val().split('\n').filter(dir => dir.trim());
+            saveConfig();
+        }, 500));
         
-        // 测试采集
-        $('#mp-test-fetch').on('click', testMediaFetch);
-        
-        // 清除缓存
-        $('#mp-clear-cache').on('click', function() {
-            mediaCache = [];
-            showStatus('图片缓存已清除', 'info');
-            $('#mp-preview').empty();
-        });
-        
-        // 测试插入
-        $('#mp-test-insert').on('click', testMediaInsert);
-        
-        console.log('✅ 设置事件绑定完成');
+        $('#sg-extensions').on('input', debounce(() => {
+            config.fileExtensions = $('#sg-extensions').val().split(',').map(ext => ext.trim()).filter(ext => ext);
+            saveConfig();
+        }, 500));
     }
     
-    // 显示状态信息
-    function showStatus(message, type = 'info') {
-        const statusEl = $('#mp-status');
-        const colors = { info: 'blue', success: 'green', error: 'red' };
-        statusEl.html(`<span style="color: ${colors[type]}; font-weight: bold;">${message}</span>`).show();
-    }
-    
-    // 核心功能：采集图片
-    async function fetchImageUrls() {
-        console.log('🔄 开始采集图片...');
-        
-        if (!settings.sourceUrl) {
-            throw new Error('请先设置图片网址');
-        }
-        
-        let requestUrl, options = {};
-        
-        if (settings.useProxy) {
-            requestUrl = '/api/proxy';
-            options = {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: settings.sourceUrl,
-                    method: 'GET',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-                    }
-                })
+    // 防抖函数
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
             };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+    
+    // 显示状态
+    function showStatus(message, type = 'info') {
+        const colors = { info: 'blue', success: 'green', error: 'red' };
+        $('#sg-status').html(`<span style="color: ${colors[type]};">${message}</span>`);
+    }
+    
+    // 保存配置
+    async function saveConfig() {
+        try {
+            await SillyTavern.extension.saveSettings(PLUGIN_NAME, config);
+        } catch (error) {
+            console.error('保存配置失败:', error);
+        }
+    }
+    
+    // 加载配置
+    async function loadConfig() {
+        try {
+            const saved = await SillyTavern.extension.loadSettings(PLUGIN_NAME);
+            if (saved) {
+                config = { ...config, ...saved };
+            }
+        } catch (error) {
+            console.warn('加载配置失败，使用默认配置');
+        }
+    }
+    
+    // 核心功能：扫描图片目录
+    async function scanForImages() {
+        showStatus('🔄 扫描图片文件中...');
+        
+        const foundImages = [];
+        
+        // 尝试多种扫描方式
+        const scanMethods = [
+            scanViaFileAPI,
+            scanViaDirectoryListing,
+            scanViaKnownPaths
+        ];
+        
+        for (const method of scanMethods) {
+            try {
+                const images = await method();
+                if (images.length > 0) {
+                    foundImages.push(...images);
+                    break; // 找到图片就停止尝试其他方法
+                }
+            } catch (error) {
+                console.warn(`扫描方法失败:`, error);
+            }
+        }
+        
+        // 去重
+        imageCache = [...new Set(foundImages)].slice(0, config.maxImages);
+        
+        if (imageCache.length > 0) {
+            showStatus(`✅ 找到 ${imageCache.length} 张图片`, 'success');
+            updateFileList();
         } else {
-            requestUrl = settings.sourceUrl;
+            showStatus('❌ 未找到图片文件', 'error');
         }
         
-        console.log(`📡 请求URL: ${requestUrl}`);
+        return imageCache;
+    }
+    
+    // 方法1: 通过文件API扫描（如果支持）
+    async function scanViaFileAPI() {
+        const images = [];
         
-        const response = await fetch(requestUrl, options);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+        for (const dir of config.imageDirs) {
+            try {
+                // 尝试读取目录（需要服务器支持目录列表）
+                const response = await fetch(dir);
+                if (response.ok) {
+                    const html = await response.text();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    
+                    // 解析目录列表中的文件链接
+                    const links = doc.querySelectorAll('a[href]');
+                    links.forEach(link => {
+                        const href = link.getAttribute('href');
+                        if (href && isImageFile(href)) {
+                            images.push(dir + href);
+                        }
+                    });
+                }
+            } catch (error) {
+                // 忽略错误，继续尝试其他方法
+            }
         }
         
-        const html = await response.text();
-        console.log(`📄 获取到HTML，长度: ${html.length} 字符`);
+        return images;
+    }
+    
+    // 方法2: 通过已知路径尝试
+    async function scanViaKnownPaths() {
+        const images = [];
+        const testFiles = ['photo1.jpg', 'image1.png', 'test.jpg', 'avatar.png'];
         
-        // 解析HTML，提取图片
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const images = doc.querySelectorAll('img');
-        
-        console.log(`🖼️ 找到 ${images.length} 个图片标签`);
-        
-        const urls = [];
-        images.forEach((img, index) => {
-            // 优先使用data-src（懒加载），其次使用src
-            const url = img.getAttribute('data-src') || img.src;
-            if (url && url.startsWith('http')) {
-                urls.push(url);
-                if (index < 3) { // 只打印前3个URL用于调试
-                    console.log(`  ${index + 1}. ${url}`);
+        for (const dir of config.imageDirs) {
+            for (const file of testFiles) {
+                const testUrl = dir + file;
+                if (await checkFileExists(testUrl)) {
+                    images.push(testUrl);
                 }
             }
-        });
+        }
         
-        return urls;
+        return images;
     }
     
-    // 测试采集功能
-    async function testMediaFetch() {
-        showStatus('正在采集图片...', 'info');
-        $('#mp-preview').empty();
-        
+    // 方法3: 目录列表扫描（备用）
+    async function scanViaDirectoryListing() {
+        // 这里可以添加更复杂的目录扫描逻辑
+        return [];
+    }
+    
+    // 检查文件是否存在
+    async function checkFileExists(url) {
         try {
-            const urls = await fetchImageUrls();
-            mediaCache = urls;
-            
-            if (urls.length === 0) {
-                showStatus('❌ 未找到任何图片', 'error');
-                return;
-            }
-            
-            showStatus(`✅ 成功采集到 ${urls.length} 张图片！`, 'success');
-            
-            // 显示预览
-            const previewHtml = `
-                <div style="border: 1px solid #ccc; padding: 10px; margin-top: 10px;">
-                    <p><strong>图片预览（第一张）:</strong></p>
-                    <img src="${urls[0]}" style="max-width: 200px; max-height: 150px; border: 1px solid #ddd;">
-                    <p style="font-size: 12px; word-break: break-all;">${urls[0]}</p>
-                </div>
-            `;
-            $('#mp-preview').html(previewHtml);
-            
+            const response = await fetch(url, { method: 'HEAD' });
+            return response.ok;
         } catch (error) {
-            console.error('采集失败:', error);
-            showStatus(`❌ 采集失败: ${error.message}`, 'error');
+            return false;
         }
     }
     
-    // 获取随机图片
-    async function getRandomImageUrl() {
-        if (mediaCache.length === 0) {
-            console.log('🔄 缓存为空，开始自动采集...');
-            try {
-                const urls = await fetchImageUrls();
-                mediaCache = urls;
-            } catch (error) {
-                console.error('自动采集失败:', error);
-                return null;
-            }
-        }
+    // 判断是否是图片文件
+    function isImageFile(filename) {
+        return config.fileExtensions.some(ext => 
+            filename.toLowerCase().endsWith(ext.toLowerCase())
+        );
+    }
+    
+    // 更新文件列表显示
+    function updateFileList() {
+        const fileList = imageCache.slice(0, 20).map((url, index) => 
+            `<div style="font-size: 12px; margin: 2px 0;">
+                ${index + 1}. <a href="${url}" target="_blank">${url.split('/').pop()}</a>
+            </div>`
+        ).join('');
         
-        if (mediaCache.length > 0) {
-            const randomIndex = Math.floor(Math.random() * mediaCache.length);
-            return mediaCache[randomIndex];
-        }
+        $('#sg-file-list').html(`
+            <div style="border: 1px solid #ccc; padding: 10px;">
+                <strong>发现的图片文件 (最多显示20个):</strong>
+                ${fileList}
+                ${imageCache.length > 20 ? `<div>... 还有 ${imageCache.length - 20} 个文件</div>` : ''}
+            </div>
+        `);
+    }
+    
+    // 清空缓存
+    function clearCache() {
+        imageCache = [];
+        currentIndex = 0;
+        $('#sg-file-list').empty();
+        $('#sg-preview').empty();
+        showStatus('缓存已清空');
+    }
+    
+    // 获取下一张图片
+    function getNextImage() {
+        if (imageCache.length === 0) return null;
         
-        return null;
+        if (config.insertMode === 'sequential') {
+            const image = imageCache[currentIndex];
+            currentIndex = (currentIndex + 1) % imageCache.length;
+            return image;
+        } else {
+            // 随机模式
+            return imageCache[Math.floor(Math.random() * imageCache.length)];
+        }
     }
     
     // 插入图片到消息
-    function insertImageToMessage(messageId, imageUrl) {
-        const messageElement = document.querySelector(`#mes_${messageId} .mes_text`);
-        if (!messageElement) {
-            console.warn('❌ 找不到消息元素');
-            return false;
-        }
+    function insertImageToMessage(messageId) {
+        const imageUrl = getNextImage();
+        if (!imageUrl) return false;
         
-        // 创建图片容器
+        const messageElement = document.querySelector(`#mes_${messageId} .mes_text`);
+        if (!messageElement) return false;
+        
         const container = document.createElement('div');
-        container.className = 'media-player-container';
+        container.className = 'smart-gallery-image';
         container.style.marginTop = '10px';
         container.style.textAlign = 'center';
         
         const img = document.createElement('img');
         img.src = imageUrl;
-        img.alt = '随机图片';
+        img.alt = 'AI回复图片';
         img.style.maxWidth = '80%';
         img.style.maxHeight = '400px';
         img.style.borderRadius = '8px';
-        img.style.cursor = 'pointer';
         img.style.border = '2px solid #e0e0e0';
+        img.style.cursor = 'pointer';
         
-        img.onclick = function() {
-            window.open(imageUrl, '_blank');
+        img.onclick = () => window.open(imageUrl, '_blank');
+        img.onerror = () => {
+            console.error('图片加载失败:', imageUrl);
+            container.innerHTML = '<span style="color: red;">图片加载失败</span>';
         };
         
         container.appendChild(img);
         messageElement.appendChild(container);
         
-        console.log('✅ 图片插入成功');
         return true;
     }
     
-    // 测试插入功能
-    async function testMediaInsert() {
-        if (!settings.enabled) {
-            showStatus('❌ 请先启用插件', 'error');
-            return;
-        }
+    // 测试插入
+    function testInsert() {
+        const messages = document.querySelectorAll('.mes');
+        const lastMessage = messages[messages.length - 1];
         
-        showStatus('正在测试插入图片...', 'info');
-        
-        // 获取最新的一条AI消息
-        const messages = Array.from(document.querySelectorAll('.mes')).reverse();
-        let lastAIMessage = null;
-        
-        for (const message of messages) {
-            if (!message.querySelector('.mes_user')) { // 不是用户消息
-                lastAIMessage = message;
-                break;
+        if (lastMessage && !lastMessage.querySelector('.mes_user')) {
+            const messageId = lastMessage.id.replace('mes_', '');
+            if (insertImageToMessage(messageId)) {
+                showStatus('✅ 测试插入成功');
+            } else {
+                showStatus('❌ 插入失败，请先扫描图片', 'error');
             }
-        }
-        
-        if (!lastAIMessage) {
+        } else {
             showStatus('❌ 找不到AI回复消息', 'error');
-            return;
-        }
-        
-        const messageId = lastAIMessage.id.replace('mes_', '');
-        const imageUrl = await getRandomImageUrl();
-        
-        if (!imageUrl) {
-            showStatus('❌ 没有可用的图片', 'error');
-            return;
-        }
-        
-        const success = insertImageToMessage(messageId, imageUrl);
-        if (success) {
-            showStatus('✅ 测试插入成功！', 'success');
         }
     }
     
-    // AI回复时自动插入图片
+    // AI回复时自动插入
     function onMessageRendered(event, data) {
-        if (!settings.enabled || !settings.autoInsert) {
-            return;
-        }
+        if (!config.enabled || data.message.is_user) return;
         
-        const message = data.message;
-        if (message.is_user) {
-            return; // 忽略用户消息
-        }
-        
-        console.log(`🤖 AI回复，准备插入图片到消息 ${message.id}`);
-        
-        // 稍等片刻让消息完全渲染
-        setTimeout(async () => {
-            const imageUrl = await getRandomImageUrl();
-            if (imageUrl) {
-                insertImageToMessage(message.id, imageUrl);
-            }
-        }, 100);
-    }
-    
-    // 主初始化函数
-    async function initializePlugin() {
-        console.log('🔧 初始化媒体播放器插件...');
-        
-        try {
-            await waitForSillyTavern();
-            console.log('✅ SillyTavern环境就绪');
-            
-            await loadSettings();
-            createSettingsPanel();
-            
-            // 注册事件监听
-            if (SillyTavern.events) {
-                SillyTavern.events.on('message-rendered', onMessageRendered);
-                console.log('✅ 消息渲染事件监听器已注册');
-            }
-            
-            console.log('🎊 媒体播放器插件初始化完成！');
-            
-        } catch (error) {
-            console.error('❌ 插件初始化失败:', error);
+        if (config.autoScan && imageCache.length === 0) {
+            // 自动扫描图片
+            scanForImages().then(() => {
+                setTimeout(() => insertImageToMessage(data.message.id), 100);
+            });
+        } else {
+            setTimeout(() => insertImageToMessage(data.message.id), 100);
         }
     }
     
-    // 启动插件
+    // 初始化
+    async function initialize() {
+        await loadConfig();
+        createSettingsPanel();
+        
+        if (window.SillyTavern && SillyTavern.events) {
+            SillyTavern.events.on('message-rendered', onMessageRendered);
+        }
+        
+        // 启动时自动扫描（如果启用）
+        if (config.autoScan) {
+            setTimeout(scanForImages, 1000);
+        }
+        
+        console.log('🏞️ 智能图库插件初始化完成');
+    }
+    
+    // 启动
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializePlugin);
+        document.addEventListener('DOMContentLoaded', initialize);
     } else {
-        initializePlugin();
+        initialize();
     }
-    
 })();
