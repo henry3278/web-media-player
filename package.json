@@ -1,26 +1,9 @@
 {
   "name": "st-web-media-grabber",
   "version": "1.0.0",
-  "description": "网页媒体抓取插件 - 支持图片和视频，集成管理面板",
+  "description": "网页媒体抓取插件",
   "main": "grabber.js",
   "scripts": {
-    "install": "node installer.js",
-    "test": "echo \"测试完成\""
-  },
-  "keywords": [
-    "image",
-    "video", 
-    "grabber",
-    "web",
-    "media",
-    "tavern",
-    "extension"
-  ],
-  "author": "Web Media Grabber",
-  "license": "MIT",
-  "dependencies": {},
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yourusername/st-web-media-grabber"
+    "install": "node installer.js"
   }
 }
