@@ -1,5 +1,7 @@
 {
-    "name": "Web Media Player (DIAGNOSTIC)",
-    "version": "9.9.9",
-    "entry": "script.js"
+    "display_name": "Web Media Player",
+    "author": "Your Name & AI Assistant",
+    "version": "2.0.0",
+    "js": "index.js",
+    "css": "style.css"
 }
