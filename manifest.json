@@ -1,14 +1,8 @@
 {
     "name": "Web Media Player",
-    "author": "Henry",
+    "description": "Displays images/videos from a web source when a trigger keyword appears in the AI's message.",
+    "author": "Your Name & AI Assistant",
     "version": "1.0.0",
-    "description": "从网络加载图片/视频并在聊天中展示",
     "entry": "script.js",
-    "requirements": {
-        "sillytavern": ">=1.10.0"
-    },
-    "files": [
-        "script.js",
-        "style.css"
-    ]
+    "style": "style.css"
 }
