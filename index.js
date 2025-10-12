@@ -1,347 +1,312 @@
-// 文件名: index.js (智能自适应版 v8.0)
+// 文件名: index.js (稳定核心版 v1.0)
 (function () {
-    const extensionName = 'smart-media-collector';
-    const extensionVersion = '8.0.0';
+    console.log('🔧 媒体播放器插件开始加载...');
 
-    // 智能网站规则库
-    const intelligentRules = {
-        'kchai.org': {
-            name: 'KChai图库',
-            parseMode: 'html',
-            selector: '.post-item img, .grid-item img, article img',
-            attribute: 'data-src',
-            useProxy: true,
-            confidence: 0.9
-        },
-        'xsnvshen.co': {
-            name: '女神站',
-            parseMode: 'html', 
-            selector: '.photo-item img, .gallery-img, .album-img',
-            attribute: 'data-src',
-            useProxy: true,
-            confidence: 0.7
-        },
-        'inewgirl.com': {
-            name: 'NewGirl',
-            parseMode: 'json',
-            jsonPath: 'data.feedList',
-            urlKey: 'img',
-            useProxy: false,
-            confidence: 0.95,
-            // 专用JSON解析器
-            customParser: function(data) {
-                try {
-                    const nuxtData = window.__NUXT__ || data;
-                    if (nuxtData && nuxtData.data && Array.isArray(nuxtData.data[0]?.feedList)) {
-                        return nuxtData.data[0].feedList.map(item => item.img).filter(url => url && url.includes('http'));
-                    }
-                } catch (e) {}
-                return [];
-            }
-        },
-        // 通用规则（兜底）
-        'default': {
-            parseMode: 'html',
-            selector: 'img',
-            attribute: 'src',
-            useProxy: true,
-            confidence: 0.3
-        }
-    };
-
+    const extensionName = 'media-player-stable';
     const defaultSettings = {
         enabled: true,
-        sourceUrl: '',
-        mediaType: 'image',
-        autoDetect: true, // 新增：智能检测开关
-        manualMode: 'auto', // auto, html, json
-        manualSelector: 'img',
-        manualJsonPath: 'data.images',
-        manualUrlKey: 'url',
-        useProxy: true,
-        maxWidth: '80%',
-        maxHeight: '450px'
+        sourceUrl: 'https://www.kchai.org/', // 默认一个可用的网址
+        useProxy: true
     };
-
     let settings = { ...defaultSettings };
-    let mediaCache = [];
+    let mediaCache = []; // 图片链接缓存
 
-    /**
-     * 智能网站检测器
-     */
-    function detectSiteConfig(url) {
-        const domain = new URL(url).hostname;
-        
-        // 精确匹配
-        for (const [siteDomain, config] of Object.entries(intelligentRules)) {
-            if (domain.includes(siteDomain) || siteDomain.includes(domain)) {
-                console.log(`[${extensionName}] 智能匹配到网站: ${config.name}`);
-                return { ...config, detected: true };
-            }
+    // 1. 创建最简单的设置面板
+    function createSimpleSettings() {
+        // 确保设置区域存在
+        if (!$('#extensions_settings').length) {
+            console.error('找不到扩展设置区域！');
+            return;
         }
-        
-        // 使用默认规则
-        console.log(`[${extensionName}] 使用默认规则采集: ${domain}`);
-        return { ...intelligentRules.default, detected: false };
+
+        const html = `
+            <div class="list-group-item">
+                <h5>媒体播放器 (稳定版)</h5>
+                <div class="form-group">
+                    <label><input type="checkbox" id="mp-enabled" ${settings.enabled ? 'checked' : ''}> 启用插件</label>
+                </div>
+                <div class="form-group">
+                    <label for="mp-sourceUrl">图片网址:</label>
+                    <input type="text" class="form-control" id="mp-sourceUrl" value="${settings.sourceUrl}" placeholder="https://example.com">
+                    <small class="form-text text-muted">输入一个包含图片的网页地址</small>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="mp-useProxy" ${settings.useProxy ? 'checked' : ''}> 使用代理 (解决跨域问题)</label>
+                </div>
+                <button class="btn btn-sm btn-primary" id="mp-test">测试采集</button>
+                <button class="btn btn-sm btn-secondary" id="mp-clear">清除缓存</button>
+                <div id="mp-status" style="margin-top: 10px; font-size: 0.9em;"></div>
+            </div>
+        `;
+        $('#extensions_settings').append(html);
+        console.log('✅ 设置面板创建完成');
     }
 
-    /**
-     * 智能采集引擎
-     */
-    async function intelligentCollect(url) {
-        const siteConfig = settings.autoDetect ? detectSiteConfig(url) : getManualConfig();
-        
+    // 2. 绑定设置事件
+    function bindSettingsEvents() {
+        // 启用开关
+        $(document).on('change', '#mp-enabled', function() {
+            settings.enabled = this.checked;
+            saveSettings();
+            showStatus(`插件已${settings.enabled ? '启用' : '禁用'}`, 'success');
+        });
+
+        // 网址输入
+        $(document).on('input', '#mp-sourceUrl', function() {
+            settings.sourceUrl = this.value;
+            mediaCache = []; // 网址变化，清空缓存
+            saveSettings();
+        });
+
+        // 代理开关
+        $(document).on('change', '#mp-useProxy', function() {
+            settings.useProxy = this.checked;
+            saveSettings();
+        });
+
+        // 测试按钮
+        $(document).on('click', '#mp-test', testMediaFetch);
+
+        // 清除缓存
+        $(document).on('click', '#mp-clear', function() {
+            mediaCache = [];
+            showStatus('图片缓存已清除', 'info');
+        });
+
+        console.log('✅ 设置事件绑定完成');
+    }
+
+    // 3. 保存设置
+    async function saveSettings() {
         try {
-            if (siteConfig.parseMode === 'html') {
-                return await smartHTMLCollect(url, siteConfig);
-            } else {
-                return await smartJSONCollect(url, siteConfig);
-            }
+            await SillyTavern.extension.saveSettings(extensionName, settings);
         } catch (error) {
-            console.warn(`[${extensionName}] 智能采集失败，尝试备用方案:`, error);
-            return await fallbackCollect(url);
+            console.error('保存设置失败:', error);
         }
     }
 
-    /**
-     * 智能HTML采集
-     */
-    async function smartHTMLCollect(url, config) {
-        const debugInfo = $('#smc-debug-info');
-        const finalUrl = url;
-        let requestUrl, fetchOptions = {};
+    // 4. 显示状态信息
+    function showStatus(message, type = 'info') {
+        const statusEl = $('#mp-status');
+        statusEl.removeClass('text-success text-danger text-info')
+               .addClass(`text-${type}`)
+               .text(message)
+               .show();
+        setTimeout(() => statusEl.fadeOut(), 3000);
+    }
 
-        if (config.useProxy) {
+    // 5. 核心功能：采集图片链接
+    async function fetchImageUrls() {
+        if (!settings.sourceUrl) {
+            throw new Error('请先设置图片网址');
+        }
+
+        console.log('🔄 开始采集图片...');
+
+        let requestUrl, options = {};
+
+        if (settings.useProxy) {
+            // 使用代理
             requestUrl = '/api/proxy';
-            fetchOptions = {
+            options = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    url: finalUrl,
+                    url: settings.sourceUrl,
                     method: 'GET',
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
                 })
             };
         } else {
-            requestUrl = finalUrl;
+            // 直接请求
+            requestUrl = settings.sourceUrl;
         }
 
-        const response = await fetch(requestUrl, fetchOptions);
-        if (!response.ok) throw new Error(`HTTP错误: ${response.status}`);
+        const response = await fetch(requestUrl, options);
+        
+        if (!response.ok) {
+            throw new Error(`网络请求失败: ${response.status}`);
+        }
 
         const html = await response.text();
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
-        
-        // 多选择器尝试策略
-        const selectors = Array.isArray(config.selector) ? config.selector : [config.selector];
-        let mediaUrls = [];
-        
-        for (const selector of selectors) {
-            const elements = doc.querySelectorAll(selector);
-            console.log(`[${extensionName}] 尝试选择器 "${selector}"，找到 ${elements.length} 个元素`);
-            
-            if (elements.length > 0) {
-                elements.forEach(el => {
-                    const src = el.dataset[config.attribute] || el.getAttribute(config.attribute) || el.src;
-                    if (src && src.startsWith('http')) {
-                        mediaUrls.push(src);
-                    }
-                });
-                break; // 使用第一个成功的选择器
+
+        // 简单的图片采集逻辑：获取所有图片的 data-src 或 src
+        const images = doc.querySelectorAll('img');
+        const urls = [];
+
+        images.forEach(img => {
+            // 优先取 data-src (懒加载)，没有则取 src
+            const url = img.dataset.src || img.src;
+            if (url && url.startsWith('http')) {
+                urls.push(url);
             }
-        }
-        
-        return mediaUrls;
+        });
+
+        console.log(`✅ 采集到 ${urls.length} 张图片`);
+        return urls;
     }
 
-    /**
-     * 智能JSON采集（特别优化inewgirl.com）
-     */
-    async function smartJSONCollect(url, config) {
-        const debugInfo = $('#smc-debug-info');
-        let requestUrl = url;
-        let fetchOptions = {};
-        
-        if (config.useProxy) {
-            requestUrl = '/api/proxy';
-            fetchOptions = {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: url, method: 'GET' })
-            };
-        }
-
-        const response = await fetch(requestUrl, fetchOptions);
-        if (!response.ok) throw new Error(`HTTP错误: ${response.status}`);
-
-        // 特殊处理inewgirl.com的NUXT数据
-        if (config.customParser) {
-            const html = await response.text();
-            // 尝试从script标签提取NUXT数据
-            const nuxtMatch = html.match(/window\.__NUXT__\s*=\s*({[^;]+});/);
-            if (nuxtMatch) {
-                try {
-                    const nuxtData = JSON.parse(nuxtMatch[1]);
-                    return config.customParser(nuxtData);
-                } catch (e) {
-                    console.warn('解析NUXT数据失败:', e);
-                }
-            }
-        }
-
-        // 标准JSON解析
-        const data = await response.json();
-        if (config.customParser) {
-            return config.customParser(data);
-        }
-        
-        const items = getObjectByPath(data, config.jsonPath);
-        if (!Array.isArray(items)) throw new Error('JSON路径无效');
-        
-        return items.map(item => item[config.urlKey]).filter(url => url && url.startsWith('http'));
-    }
-
-    /**
-     * 备用采集方案
-     */
-    async function fallbackCollect(url) {
-        console.log(`[${extensionName}] 启用备用采集方案`);
-        // 尝试通用图片采集
-        const elements = document.querySelectorAll('img');
-        return Array.from(elements).map(img => img.src).filter(src => src.startsWith('http'));
-    }
-
-    // 辅助函数
-    function getObjectByPath(obj, path) {
-        return path.split('.').reduce((acc, part) => acc && acc[part], obj);
-    }
-
-    function getManualConfig() {
-        return {
-            parseMode: settings.manualMode === 'auto' ? 'html' : settings.manualMode,
-            selector: settings.manualSelector,
-            jsonPath: settings.manualJsonPath,
-            urlKey: settings.manualUrlKey,
-            useProxy: settings.useProxy
-        };
-    }
-
-    // 设置面板（简化版，专注于智能功能）
-    function addSettingsPanel() {
-        const settingsHtml = `
-            <div class="list-group-item" id="smart-media-settings">
-                <div class="d-flex w-100 justify-content-between">
-                    <h5 class="mb-1">🤖 智能媒体采集器</h5>
-                    <small>v${extensionVersion}</small>
-                </div>
-                
-                <div class="form-group">
-                    <label><input type="checkbox" id="smc-enabled" ${settings.enabled ? 'checked' : ''}> 启用插件</label>
-                </div>
-                
-                <div class="form-group">
-                    <label for="smc-sourceUrl">🔗 资源网址</label>
-                    <input type="text" id="smc-sourceUrl" class="form-control" value="${settings.sourceUrl}" placeholder="输入网址，插件自动识别">
-                </div>
-                
-                <div class="form-group">
-                    <label><input type="checkbox" id="smc-autoDetect" ${settings.autoDetect ? 'checked' : ''}> 智能网站识别</label>
-                    <small class="form-text text-muted">自动识别常见图片网站并应用最优采集规则</small>
-                </div>
-                
-                <div class="form-group">
-                    <label><input type="checkbox" id="smc-useProxy" ${settings.useProxy ? 'checked' : ''}> 使用代理请求</label>
-                </div>
-                
-                <div class="wmp-test-area">
-                    <button type="button" id="smc-test-collect" class="btn btn-primary btn-sm">🔍 智能测试</button>
-                    <div id="smc-debug-info" class="wmp-status info"></div>
-                    <div id="smc-test-result" class="wmp-status"></div>
-                </div>
-            </div>
-        `;
-        $('#extensions_settings').append(settingsHtml);
-    }
-
-    // 事件监听
-    function addSettingsEventListeners() {
-        $('#smart-media-settings').on('change', '#smc-enabled', updateSetting('enabled', 'checkbox'));
-        $('#smart-media-settings').on('input', '#smc-sourceUrl', updateSetting('sourceUrl', 'text', true));
-        $('#smart-media-settings').on('change', '#smc-autoDetect', updateSetting('autoDetect', 'checkbox'));
-        $('#smart-media-settings').on('change', '#smc-useProxy', updateSetting('useProxy', 'checkbox'));
-        $('#smart-media-settings').on('click', '#smc-test-collect', testIntelligentCollect);
-    }
-
-    async function testIntelligentCollect() {
-        const status = $('#smc-test-result');
-        const debugInfo = $('#smc-debug-info');
-        
-        status.removeClass('success error').html('🔍 智能识别中...').addClass('info').show();
-        debugInfo.html('').show();
+    // 6. 测试采集功能
+    async function testMediaFetch() {
+        showStatus('正在采集图片...', 'info');
         
         try {
-            const urls = await intelligentCollect(settings.sourceUrl);
+            const urls = await fetchImageUrls();
+            mediaCache = urls; // 更新缓存
+            showStatus(`成功采集到 ${urls.length} 张图片！`, 'success');
+            
+            // 显示第一张图片作为预览
             if (urls.length > 0) {
-                status.html(`✅ 智能采集成功！找到 ${urls.length} 个媒体文件`).addClass('success');
-                debugInfo.html(`识别规则: ${detectSiteConfig(settings.sourceUrl).name}<br>采集模式: ${detectSiteConfig(settings.sourceUrl).parseMode}`);
-                mediaCache = urls;
-            } else {
-                status.html('❌ 未找到媒体文件').addClass('error');
+                $('#mp-status').append(`<br><img src="${urls[0]}" style="max-width: 200px; margin-top: 10px;">`);
             }
         } catch (error) {
-            status.html(`❌ 采集失败: ${error.message}`).addClass('error');
+            console.error('采集失败:', error);
+            showStatus(`采集失败: ${error.message}`, 'danger');
         }
     }
 
-    // 原有的autoInsertMedia等函数保持不变
-    async function autoInsertMedia(type, data) {
-        const message = data.message;
-        if (!settings.enabled || message.is_user || !message.mes) return;
-
-        const messageElement = document.querySelector(`#mes_${message.id} .mes_text`);
-        if (!messageElement) return;
-
-        const mediaUrl = await getRandomMediaUrl();
-        if (!mediaUrl) return;
-
-        const container = document.createElement('div');
-        container.className = 'media-container';
-        const mediaElement = document.createElement('img');
-        mediaElement.src = mediaUrl;
-        mediaElement.style.maxWidth = settings.maxWidth;
-        mediaElement.style.maxHeight = settings.maxHeight;
-        mediaElement.onclick = () => window.open(mediaUrl, '_blank');
-        
-        container.appendChild(mediaElement);
-        messageElement.appendChild(container);
-    }
-
-    async function getRandomMediaUrl() {
+    // 7. 获取随机图片链接
+    async function getRandomImageUrl() {
+        // 如果缓存为空，先采集
         if (mediaCache.length === 0) {
+            console.log('缓存为空，开始采集...');
             try {
-                const urls = await intelligentCollect(settings.sourceUrl);
+                const urls = await fetchImageUrls();
                 mediaCache = urls;
             } catch (error) {
+                console.error('自动采集失败:', error);
                 return null;
             }
         }
-        return mediaCache[Math.floor(Math.random() * mediaCache.length)];
-    }
 
-    // 初始化
-    $(document).ready(async function () {
-        try {
-            const loadedSettings = await SillyTavern.extension.loadSettings(extensionName);
-            settings = { ...defaultSettings, ...loadedSettings };
-        } catch (error) {
-            console.error(`[${extensionName}] 加载设置失败:`, error);
+        // 从缓存中随机选择一张
+        if (mediaCache.length > 0) {
+            const randomIndex = Math.floor(Math.random() * mediaCache.length);
+            return mediaCache[randomIndex];
         }
 
-        addSettingsPanel();
-        addSettingsEventListeners();
-        SillyTavern.events.on('message-rendered', autoInsertMedia);
-        console.log(`[${extensionName} v${extensionVersion}] 智能采集器已加载`);
-    });
+        return null;
+    }
+
+    // 8. 核心功能：AI回复时插入图片
+    async function onMessageRendered(event, data) {
+        // 检查插件是否启用
+        if (!settings.enabled) {
+            return;
+        }
+
+        const message = data.message;
+        
+        // 只处理AI的回复，忽略用户消息
+        if (message.is_user) {
+            return;
+        }
+
+        console.log('🤖 检测到AI回复，准备插入图片...');
+
+        // 获取消息的DOM元素
+        const messageElement = document.querySelector(`#mes_${message.id} .mes_text`);
+        if (!messageElement) {
+            console.warn('找不到消息元素');
+            return;
+        }
+
+        // 获取随机图片链接
+        const imageUrl = await getRandomImageUrl();
+        if (!imageUrl) {
+            console.warn('没有可用的图片链接');
+            return;
+        }
+
+        console.log(`🖼️ 插入图片: ${imageUrl}`);
+
+        // 创建图片容器和图片元素
+        const container = document.createElement('div');
+        container.className = 'media-container';
+
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.alt = '随机图片';
+        img.onclick = function() {
+            window.open(imageUrl, '_blank');
+        };
+
+        container.appendChild(img);
+        messageElement.appendChild(container);
+
+        console.log('✅ 图片插入完成');
+    }
+
+    // 9. 插件初始化
+    async function initializePlugin() {
+        console.log('🔧 初始化插件...');
+        
+        try {
+            // 加载设置
+            const savedSettings = await SillyTavern.extension.loadSettings(extensionName);
+            if (savedSettings) {
+                settings = { ...defaultSettings, ...savedSettings };
+            }
+            console.log('✅ 设置加载完成');
+
+            // 创建界面
+            createSimpleSettings();
+            bindSettingsEvents();
+
+            // 监听消息渲染事件 - 这是最关键的一步！
+            // 确保使用正确的事件名
+            if (typeof SillyTavern !== 'undefined' && SillyTavern.events) {
+                SillyTavern.events.on('message-rendered', onMessageRendered);
+                console.log('✅ 消息渲染事件监听器已注册');
+            } else {
+                // 备用方案：直接监听DOM变化
+                console.log('⚠️ 使用DOM变化监听作为备用方案');
+                observeMessageChanges();
+            }
+
+            console.log('🎉 媒体播放器插件初始化完成！');
+            
+        } catch (error) {
+            console.error('插件初始化失败:', error);
+        }
+    }
+
+    // 10. DOM变化监听（备用方案）
+    function observeMessageChanges() {
+        // 简单的DOM观察，确保能捕获新消息
+        let lastMessageCount = 0;
+        
+        setInterval(() => {
+            const messages = document.querySelectorAll('.mes');
+            if (messages.length > lastMessageCount) {
+                // 有新消息，尝试为最新的AI消息插入图片
+                const lastMessage = messages[messages.length - 1];
+                if (lastMessage && !lastMessage.querySelector('.mes_user')) {
+                    // 模拟消息渲染事件
+                    const fakeEvent = { type: 'message-rendered' };
+                    const fakeData = { 
+                        message: { 
+                            id: lastMessage.id.replace('mes_', ''),
+                            is_user: false,
+                            mes: lastMessage.querySelector('.mes_text')?.textContent || ''
+                        } 
+                    };
+                    onMessageRendered(fakeEvent, fakeData);
+                }
+                lastMessageCount = messages.length;
+            }
+        }, 1000);
+    }
+
+    // 页面加载完成后初始化插件
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializePlugin);
+    } else {
+        initializePlugin();
+    }
 
 })();
