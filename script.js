@@ -1,3 +1,6 @@
+// 从settings.js导入loadSettings函数
+import { loadSettings } from './settings.js';
+
 // 导出初始化函数
 export function initScript() {
     console.log('[Web Media Player] 正在初始化核心功能');
@@ -15,19 +18,26 @@ export function initScript() {
     function parseMediaContent(message) {
         const mediaRegex = /\[(image|video):(https?:\/\/[^\s]+?\.(?:jpg|jpeg|png|gif|mp4|webm|mov))\]/gi;
         return message.replace(mediaRegex, (match, type, url) => {
-            // 检查域名是否允许
-            const allowedDomains = settings.allowedDomains.split(',').map(d => d.trim());
-            const domain = new URL(url).hostname;
-            
-            if (!allowedDomains.some(d => domain.endsWith(d))) {
-                return `<div class="web-media-container blocked" data-type="blocked">
-                    <span>⚠️ 不允许的媒体来源: ${domain}</span>
+            try {
+                // 检查域名是否允许
+                const allowedDomains = settings.allowedDomains.split(',').map(d => d.trim());
+                const domain = new URL(url).hostname;
+                
+                if (!allowedDomains.some(d => domain.endsWith(d))) {
+                    return `<div class="web-media-container blocked" data-type="blocked">
+                        <span>⚠️ 不允许的媒体来源: ${domain}</span>
+                    </div>`;
+                }
+                
+                return type === 'image' 
+                    ? `<div class="web-media-container" data-type="image"><img src="${url}" alt="网络图片"></div>`
+                    : `<div class="web-media-container" data-type="video"><video controls ${settings.autoPlayVideos ? 'autoplay muted playsinline' : ''}><source src="${url}" type="video/mp4"></video></div>`;
+            } catch (e) {
+                console.error('[Web Media Player] 解析媒体URL失败:', e);
+                return `<div class="web-media-container error" data-type="error">
+                    <span>❌ 无效的媒体URL</span>
                 </div>`;
             }
-            
-            return type === 'image' 
-                ? `<div class="web-media-container" data-type="image"><img src="${url}" alt="网络图片"></div>`
-                : `<div class="web-media-container" data-type="video"><video controls ${settings.autoPlayVideos ? 'autoplay muted playsinline' : ''}><source src="${url}" type="video/mp4"></video></div>`;
         });
     }
 
@@ -78,6 +88,3 @@ export function initScript() {
     
     console.log('[Web Media Player] 核心功能初始化完成');
 }
-
-// 从settings.js导入loadSettings函数
-import { loadSettings } from './settings.js';
