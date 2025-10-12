@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const imageGrabber = require('./grabber');
 
-// 获取当前配置
 router.get('/config', (req, res) => {
   try {
     res.json(imageGrabber.getConfig());
@@ -11,7 +10,6 @@ router.get('/config', (req, res) => {
   }
 });
 
-// 更新配置
 router.post('/config', (req, res) => {
   try {
     imageGrabber.updateConfig(req.body);
@@ -28,15 +26,14 @@ router.post('/config', (req, res) => {
   }
 });
 
-// 测试连接
 router.post('/test', async (req, res) => {
   try {
     const { website, selectors, excludeKeywords } = req.body;
     
     const testConfig = { 
       targetWebsite: website,
-      imageSelectors: selectors || imageGrabber.getConfig().imageSelectors,
-      excludeKeywords: excludeKeywords || imageGrabber.getConfig().excludeKeywords
+      imageSelectors: selectors || ['img'],
+      excludeKeywords: excludeKeywords || []
     };
     
     const images = await imageGrabber.testConnection(testConfig);
@@ -54,7 +51,6 @@ router.post('/test', async (req, res) => {
   }
 });
 
-// 获取插件状态
 router.get('/status', (req, res) => {
   try {
     res.json({
