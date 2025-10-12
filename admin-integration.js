@@ -25,7 +25,7 @@ class ImageGrabberAdmin {
     return {
       enabled: false,
       targetWebsite: 'https://www.kchai.org/',
-      imageSelectors: ["img[src*='.jpg']", "img[src*='.png']"],
+      imageSelectors: ["img"],
       excludeKeywords: ['icon', 'logo', 'ad'],
       insertPosition: 'after_first_sentence',
       maxImageWidth: '400px',
@@ -39,7 +39,7 @@ class ImageGrabberAdmin {
 
     container.innerHTML = `
       <div class="settings-section">
-        <h3>🖼️ 图片抓取设置</h3>
+        <h3>🖼️ 图片抓取设置 (无依赖版)</h3>
         
         <div class="form-group">
           <label>
@@ -63,6 +63,20 @@ class ImageGrabberAdmin {
           <div class="form-group">
             <label>排除关键词 (逗号分隔):</label>
             <input type="text" id="ig-keywords" value="${Array.isArray(this.settings.excludeKeywords) ? this.settings.excludeKeywords.join(',') : ''}">
+          </div>
+
+          <div class="form-group">
+            <label>插入位置:</label>
+            <select id="ig-position">
+              <option value="after_first_sentence" ${this.settings.insertPosition === 'after_first_sentence' ? 'selected' : ''}>第一个句子后</option>
+              <option value="beginning" ${this.settings.insertPosition === 'beginning' ? 'selected' : ''}>文本开头</option>
+              <option value="end" ${this.settings.insertPosition === 'end' ? 'selected' : ''}>文本末尾</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>最大图片宽度:</label>
+            <input type="text" id="ig-width" value="${this.settings.maxImageWidth}">
           </div>
 
           <div class="form-group">
@@ -101,9 +115,9 @@ class ImageGrabberAdmin {
         targetWebsite: document.getElementById('ig-website').value,
         imageSelectors: document.getElementById('ig-selectors').value.split('\n').filter(s => s.trim()),
         excludeKeywords: document.getElementById('ig-keywords').value.split(',').filter(s => s.trim()),
-        insertPosition: this.settings.insertPosition,
-        maxImageWidth: this.settings.maxImageWidth,
-        requestTimeout: this.settings.requestTimeout
+        insertPosition: document.getElementById('ig-position').value,
+        maxImageWidth: document.getElementById('ig-width').value,
+        requestTimeout: 5000
       };
 
       const response = await fetch('/api/plugins/image-grabber/config', {
@@ -154,14 +168,16 @@ class ImageGrabberAdmin {
     const resultDiv = document.getElementById('ig-result');
     if (images && images.length > 0) {
       const preview = images.map(img => 
-        `<img src="${img}" style="max-width: 100px; margin: 5px; border: 1px solid #ddd;">`
+        `<img src="${img}" style="max-width: 100px; margin: 5px; border: 1px solid #ddd;" onerror="this.style.display='none'">`
       ).join('');
-      resultDiv.innerHTML += `<div>${preview}</div>`;
+      resultDiv.innerHTML += `<div style="margin-top: 10px;">${preview}</div>`;
     }
   }
 }
 
 // 自动初始化
-document.addEventListener('DOMContentLoaded', () => {
-  new ImageGrabberAdmin();
-});
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', () => {
+    new ImageGrabberAdmin();
+  });
+}
