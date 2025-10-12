@@ -8,7 +8,7 @@ class SimplePluginInstaller {
     this.pluginName = 'ai-tavern-image-grabber-simple';
     this.pluginDir = __dirname;
     this.tavernRoot = this.findTavernRoot();
-    this.extensionsDir = path.join(this.tavernRoot, 'extensions', this.pluginName);
+    this.extensionsDir = this.findExtensionsDir();
   }
 
   async install() {
@@ -19,6 +19,7 @@ class SimplePluginInstaller {
       this.checkEnvironment();
       this.createExtensionDir();
       this.copyFiles();
+      this.createManifestFile();
       this.patchMainApp();
       
       console.log('\n✅ 安装完成！');
@@ -43,6 +44,25 @@ class SimplePluginInstaller {
     return process.cwd();
   }
 
+  findExtensionsDir() {
+    // 优先使用云酒馆的标准扩展目录
+    const possibleDirs = [
+      path.join(this.tavernRoot, 'public', 'scripts', 'extensions', 'third-party', this.pluginName),
+      path.join(this.tavernRoot, 'extensions', this.pluginName),
+      path.join(this.tavernRoot, 'plugins', this.pluginName)
+    ];
+    
+    for (const dir of possibleDirs) {
+      const parentDir = path.dirname(dir);
+      if (fs.existsSync(parentDir)) {
+        return dir;
+      }
+    }
+    
+    // 创建标准目录
+    return path.join(this.tavernRoot, 'public', 'scripts', 'extensions', 'third-party', this.pluginName);
+  }
+
   checkEnvironment() {
     console.log('🔍 检查环境...');
     
@@ -60,18 +80,26 @@ class SimplePluginInstaller {
     
     this.mainAppFile = path.join(this.tavernRoot, appFiles[0]);
     console.log(`   主程序文件: ${appFiles[0]}`);
+    console.log(`   扩展目录: ${path.relative(this.tavernRoot, this.extensionsDir)}`);
   }
 
   createExtensionDir() {
     console.log('\n📁 创建扩展目录...');
     
+    // 创建所有必要的父目录
+    const parentDir = path.dirname(this.extensionsDir);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+      console.log(`   创建父目录: ${path.relative(this.tavernRoot, parentDir)}`);
+    }
+    
     if (fs.existsSync(this.extensionsDir)) {
-      console.log('   目录已存在，覆盖安装');
+      console.log('   目录已存在，清理旧文件');
       fs.rmSync(this.extensionsDir, { recursive: true });
     }
     
     fs.mkdirSync(this.extensionsDir, { recursive: true });
-    console.log(`   创建目录: ${path.relative(this.tavernRoot, this.extensionsDir)}`);
+    console.log(`   创建扩展目录成功`);
   }
 
   copyFiles() {
@@ -95,11 +123,44 @@ class SimplePluginInstaller {
     });
   }
 
+  createManifestFile() {
+    console.log('\n📝 创建清单文件...');
+    
+    const manifestPath = path.join(this.extensionsDir, 'manifest.json');
+    const manifest = {
+      "name": "ai-tavern-image-grabber-simple",
+      "version": "3.0.0",
+      "description": "AI云酒馆图片抓取插件 - 简化版",
+      "type": "extension",
+      "author": "AI云酒馆",
+      "entry": "./grabber.js",
+      "config": "./config.js",
+      "dependencies": [],
+      "permissions": ["network"],
+      "settings": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "label": "启用插件"
+        },
+        "targetWebsite": {
+          "type": "string",
+          "default": "https://www.kchai.org/",
+          "label": "目标网站"
+        }
+      }
+    };
+    
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    console.log('   ✅ manifest.json 创建成功');
+  }
+
   patchMainApp() {
     console.log('\n🔧 集成到主程序...');
     
     if (!fs.existsSync(this.mainAppFile)) {
-      console.log('   ⚠️ 主程序文件不存在');
+      console.log('   ⚠️ 主程序文件不存在，需要手动集成');
+      this.showManualIntegration();
       return;
     }
     
@@ -112,49 +173,77 @@ class SimplePluginInstaller {
     }
     
     // 添加引入语句
-    const importStr = `\n// 图片抓取插件\nconst imageGrabber = require('./extensions/${this.pluginName}/grabber');\n`;
+    const relativePath = path.relative(path.dirname(this.mainAppFile), this.extensionsDir);
+    const importStr = `\n// 图片抓取插件\nconst imageGrabber = require('./${relativePath}/grabber');\n`;
     
+    let newContent = content;
+    
+    // 在文件顶部添加引入
     if (content.includes('require(')) {
       const lastRequire = content.lastIndexOf('require(');
       const insertIndex = content.indexOf('\n', lastRequire) + 1;
-      content = content.slice(0, insertIndex) + importStr + content.slice(insertIndex);
+      newContent = content.slice(0, insertIndex) + importStr + content.slice(insertIndex);
     } else {
-      content = importStr + content;
+      newContent = importStr + content;
     }
     
     // 在AI回复处理中添加调用
     const aiPatterns = [
-      /(async\s+)?function\s+generateAIResponse\s*\([^)]*\)\s*{/,
+      /(async\s+)?function\s+generateAIResponse\s*\([^)]*\)\s*\{/,
       /(let|const|var)\s+\w+\s*=\s*await\s+generateAIResponse\([^)]*\);/
     ];
     
+    let patched = false;
     for (const pattern of aiPatterns) {
-      if (pattern.test(content)) {
-        content = content.replace(pattern, (match) => {
+      if (pattern.test(newContent)) {
+        newContent = newContent.replace(pattern, (match) => {
+          patched = true;
           if (match.includes('function')) {
             return match + `\n  // 图片抓取插件\n  if (imageGrabber.isEnabled()) {\n    text = await imageGrabber.addImageToText(text);\n  }`;
           } else {
-            return match + `\n  // 图片抓取插件\n  if (imageGrabber.isEnabled()) {\n    ${match.split('=')[0].trim()} = await imageGrabber.addImageToText(${match.split('=')[0].trim()});\n  }`;
+            const varName = match.split('=')[0].trim();
+            return match + `\n  // 图片抓取插件\n  if (imageGrabber.isEnabled()) {\n    ${varName} = await imageGrabber.addImageToText(${varName});\n  }`;
           }
         });
         break;
       }
     }
     
+    if (!patched) {
+      console.log('   ⚠️ 未找到AI回复函数，需要手动集成');
+      this.showManualIntegration();
+      return;
+    }
+    
     // 备份原文件
     const backupFile = this.mainAppFile + '.backup.' + Date.now();
     fs.copyFileSync(this.mainAppFile, backupFile);
     
-    fs.writeFileSync(this.mainAppFile, content);
+    fs.writeFileSync(this.mainAppFile, newContent);
     console.log('   ✅ 主程序修改完成');
     console.log(`   💾 原文件备份: ${path.basename(backupFile)}`);
+  }
+
+  showManualIntegration() {
+    console.log('\n📝 手动集成指南:');
+    const relativePath = path.relative(path.dirname(this.mainAppFile), this.extensionsDir);
+    
+    console.log(`
+1. 在 ${path.basename(this.mainAppFile)} 顶部添加:
+   const imageGrabber = require('./${relativePath}/grabber');
+
+2. 在AI回复处理函数中添加:
+   if (imageGrabber.isEnabled()) {
+     responseText = await imageGrabber.addImageToText(responseText);
+   }
+    `);
   }
 
   showBanner() {
     console.log(`
     ╔══════════════════════════════════════════════╗
     ║          图片抓取插件 - 简化版               ║
-    ║              无管理面板 v3.0.0               ║
+    ║          包含Manifest v3.0.0                 ║
     ╚══════════════════════════════════════════════╝
     `);
   }
@@ -166,21 +255,18 @@ class SimplePluginInstaller {
 1. 编辑配置文件:
    ${path.relative(this.tavernRoot, path.join(this.extensionsDir, 'config.js'))}
 
-2. 修改配置参数:
-   - enabled: true/false (启用/禁用)
-   - targetWebsite: "https://www.kchai.org/" (目标网站)
-   - 其他参数根据需求调整
+2. 修改配置参数后重启服务
 
-3. 重启云酒馆服务:
+3. 常用配置选项:
+   - enabled: true/false (启用/禁用)
+   - targetWebsite: "目标网站URL"
+   - excludeKeywords: ["icon", "logo", "ad"]
+
+4. 重启服务:
    cd "${this.tavernRoot}"
    npm start
 
-4. 测试功能:
-   - 发送消息看是否自动插入图片
-   - 查看控制台日志确认运行状态
-
-📝 配置文件位置:
-${path.join(this.extensionsDir, 'config.js')}
+✅ 安装完成！插件已包含必要的 manifest.json 文件。
     `);
   }
 }
