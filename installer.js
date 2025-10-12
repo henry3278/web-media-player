@@ -8,382 +8,544 @@ class TavernPluginInstaller {
   constructor() {
     this.pluginName = 'ai-tavern-image-grabber';
     this.pluginDir = __dirname;
+    this.isFixMode = process.argv.includes('--fix');
     this.tavernRoot = this.findTavernRoot();
-    this.extensionsDir = path.join(this.tavernRoot, 'extensions', this.pluginName);
+    this.extensionsDir = this.findExtensionsDir();
+  }
+
+  async install() {
+    console.log('🚀 AI云酒馆图片抓取插件安装程序\n');
+    
+    try {
+      this.showBanner();
+      await this.diagnoseEnvironment();
+      
+      if (this.isFixMode) {
+        await this.fixInstallation();
+      } else {
+        await this.performInstallation();
+      }
+      
+      console.log('\n✅ 操作完成！');
+      this.showNextSteps();
+      
+    } catch (error) {
+      console.error('\n❌ 操作失败:', error.message);
+      this.showTroubleshootingTips(error);
+      process.exit(1);
+    }
   }
 
   findTavernRoot() {
-    let currentDir = this.pluginDir;
+    console.log('🔍 定位云酒馆根目录...');
     
-    for (let i = 0; i < 5; i++) {
-      if (fs.existsSync(path.join(currentDir, 'package.json'))) {
-        const pkg = JSON.parse(fs.readFileSync(path.join(currentDir, 'package.json'), 'utf8'));
-        if (pkg.name && (pkg.name.includes('tavern') || pkg.name.includes('ai'))) {
-          return currentDir;
-        }
+    let currentDir = this.pluginDir;
+    const maxDepth = 10;
+    
+    for (let i = 0; i < maxDepth; i++) {
+      const possibleFiles = ['package.json', 'app.js', 'server.js', 'main.js'];
+      const hasProjectFiles = possibleFiles.some(file => 
+        fs.existsSync(path.join(currentDir, file))
+      );
+      
+      if (hasProjectFiles) {
+        console.log(`   📍 发现项目根目录: ${currentDir}`);
+        return currentDir;
       }
+      
       if (currentDir === path.dirname(currentDir)) break;
       currentDir = path.dirname(currentDir);
     }
     
-    return process.cwd();
+    // 使用当前工作目录作为备选
+    const fallbackDir = process.cwd();
+    console.log(`   ⚠️  使用当前目录: ${fallbackDir}`);
+    return fallbackDir;
   }
 
-  async install() {
-    console.log('🚀 开始安装 AI 云酒馆图片抓取插件...\n');
+  findExtensionsDir() {
+    console.log('🔍 检测扩展目录结构...');
+    
+    const possibleLocations = [
+      // 标准云酒馆结构
+      path.join(this.tavernRoot, 'public', 'scripts', 'extensions', 'third-party', this.pluginName),
+      path.join(this.tavernRoot, 'public', 'extensions', this.pluginName),
+      path.join(this.tavernRoot, 'extensions', this.pluginName),
+      path.join(this.tavernRoot, 'plugins', this.pluginName),
+      path.join(this.tavernRoot, 'src', 'extensions', this.pluginName),
+      
+      // 备用位置
+      path.join(this.tavernRoot, 'dist', 'extensions', this.pluginName),
+      path.join(this.tavernRoot, 'build', 'extensions', this.pluginName)
+    ];
+    
+    for (const location of possibleLocations) {
+      const parentDir = path.dirname(location);
+      if (fs.existsSync(parentDir)) {
+        console.log(`   📍 使用扩展目录: ${path.relative(this.tavernRoot, location)}`);
+        return location;
+      }
+    }
+    
+    // 创建默认目录
+    const defaultLocation = path.join(this.tavernRoot, 'public', 'scripts', 'extensions', 'third-party', this.pluginName);
+    console.log(`   📍 创建默认目录: ${path.relative(this.tavernRoot, defaultLocation)}`);
+    return defaultLocation;
+  }
+
+  async diagnoseEnvironment() {
+    console.log('\n🔧 环境诊断...');
+    
+    // 检查Node.js版本
+    const nodeVersion = process.version;
+    console.log(`   ✅ Node.js版本: ${nodeVersion}`);
+    
+    if (parseFloat(nodeVersion.slice(1)) < 14.0) {
+      throw new Error('Node.js版本需要14.0或更高');
+    }
+    
+    // 检查关键目录
+    const criticalDirs = [
+      this.tavernRoot,
+      path.dirname(this.extensionsDir)
+    ];
+    
+    for (const dir of criticalDirs) {
+      try {
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+          console.log(`   ✅ 创建目录: ${path.relative(this.tavernRoot, dir)}`);
+        } else {
+          fs.accessSync(dir, fs.constants.W_OK);
+          console.log(`   ✅ 目录可写: ${path.relative(this.tavernRoot, dir)}`);
+        }
+      } catch (error) {
+        throw new Error(`目录不可写: ${dir} - ${error.message}`);
+      }
+    }
+    
+    // 检查是否已安装
+    if (fs.existsSync(this.extensionsDir) && !this.isFixMode) {
+      console.log(`   ⚠️  插件已存在: ${path.relative(this.tavernRoot, this.extensionsDir)}`);
+      const shouldContinue = await this.promptContinue('是否继续安装（将覆盖现有文件）？');
+      if (!shouldContinue) {
+        throw new Error('安装已取消');
+      }
+    }
+  }
+
+  async performInstallation() {
+    console.log('\n📦 开始安装...');
+    
+    await this.backupExisting();
+    await this.createExtensionStructure();
+    await this.copyPluginFiles();
+    await this.installDependencies();
+    await this.patchMainApplication();
+    await this.registerExtension();
+    await this.createManifestFile();
+    await this.createConfigFile();
+    
+    console.log('   ✅ 安装步骤完成');
+  }
+
+  async fixInstallation() {
+    console.log('\n🔧 修复安装...');
+    
+    if (!fs.existsSync(this.extensionsDir)) {
+      throw new Error('扩展目录不存在，请先运行正常安装');
+    }
+    
+    console.log(`   修复目录: ${path.relative(this.tavernRoot, this.extensionsDir)}`);
+    
+    // 检查并修复关键文件
+    const criticalFiles = ['manifest.json', 'grabber.js', 'config.json'];
+    let fixedCount = 0;
+    
+    for (const file of criticalFiles) {
+      const filePath = path.join(this.extensionsDir, file);
+      if (!fs.existsSync(filePath)) {
+        await this.createFile(file, filePath);
+        fixedCount++;
+      }
+    }
+    
+    if (fixedCount > 0) {
+      console.log(`   ✅ 修复了 ${fixedCount} 个文件`);
+    } else {
+      console.log('   ✅ 未发现需要修复的文件');
+    }
+    
+    // 重新注册扩展
+    await this.registerExtension();
+  }
+
+  async backupExisting() {
+    if (fs.existsSync(this.extensionsDir)) {
+      console.log('\n📦 备份现有文件...');
+      
+      const backupDir = this.extensionsDir + '.backup.' + Date.now();
+      try {
+        fs.cpSync(this.extensionsDir, backupDir, { recursive: true });
+        console.log(`   ✅ 备份完成: ${path.basename(backupDir)}`);
+      } catch (error) {
+        console.log(`   ⚠️  备份失败: ${error.message}`);
+      }
+    }
+  }
+
+  async createExtensionStructure() {
+    console.log('\n📁 创建扩展结构...');
+    
+    // 确保所有父目录存在
+    const parentDir = path.dirname(this.extensionsDir);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+      console.log(`   ✅ 创建父目录: ${path.relative(this.tavernRoot, parentDir)}`);
+    }
+    
+    // 创建扩展目录
+    if (!fs.existsSync(this.extensionsDir)) {
+      fs.mkdirSync(this.extensionsDir, { recursive: true });
+      console.log(`   ✅ 创建扩展目录: ${path.relative(this.tavernRoot, this.extensionsDir)}`);
+    }
+    
+    // 清理目录（保留配置文件）
+    if (fs.existsSync(this.extensionsDir)) {
+      try {
+        const items = fs.readdirSync(this.extensionsDir);
+        const filesToKeep = ['config.json', 'manifest.json'];
+        
+        for (const item of items) {
+          if (!filesToKeep.includes(item)) {
+            const itemPath = path.join(this.extensionsDir, item);
+            fs.rmSync(itemPath, { recursive: true, force: true });
+          }
+        }
+        console.log('   ✅ 目录清理完成');
+      } catch (error) {
+        console.log(`   ⚠️  清理目录时出错: ${error.message}`);
+      }
+    }
+  }
+
+  async copyPluginFiles() {
+    console.log('\n📄 复制插件文件...');
+    
+    const filesToCopy = [
+      'grabber.js',
+      'admin-api.js', 
+      'admin-integration.js',
+      'admin-component.vue'
+    ];
+    
+    for (const file of filesToCopy) {
+      await this.copyFile(file, path.join(this.extensionsDir, file));
+    }
+  }
+
+  async copyFile(sourceFile, targetPath) {
+    const sourcePath = path.join(this.pluginDir, sourceFile);
+    
+    if (fs.existsSync(sourcePath)) {
+      fs.copyFileSync(sourcePath, targetPath);
+      console.log(`   ✅ ${sourceFile}`);
+    } else {
+      console.log(`   ⚠️  源文件不存在: ${sourceFile}`);
+    }
+  }
+
+  async createFile(fileName, targetPath) {
+    const templates = {
+      'manifest.json': () => JSON.stringify({
+        "name": "ai-tavern-image-grabber",
+        "version": "1.1.0",
+        "description": "AI云酒馆图片抓取插件",
+        "type": "extension",
+        "author": "AI云酒馆",
+        "entry": "./grabber.js",
+        "adminEntry": "./admin-component.vue",
+        "config": "./config.json",
+        "dependencies": ["axios", "cheerio"],
+        "permissions": ["network", "filesystem"],
+        "settings": {
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "label": "启用插件"
+          },
+          "targetWebsite": {
+            "type": "string",
+            "default": "https://www.kchai.org/",
+            "label": "目标网站"
+          }
+        }
+      }, null, 2),
+      
+      'config.json': () => JSON.stringify({
+        "enabled": true,
+        "targetWebsite": "https://www.kchai.org/",
+        "imageSelectors": ["img[src*='.jpg']", "img[src*='.png']", "img[src*='.webp']"],
+        "excludeKeywords": ["icon", "logo", "ad", "spacer"],
+        "insertPosition": "after_first_sentence",
+        "maxImageWidth": "400px",
+        "requestTimeout": 5000,
+        "cacheDuration": 300000,
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      }, null, 2)
+    };
+    
+    if (templates[fileName]) {
+      fs.writeFileSync(targetPath, templates[fileName]());
+      console.log(`   ✅ 创建 ${fileName}`);
+    } else {
+      fs.writeFileSync(targetPath, '');
+      console.log(`   ✅ 创建空文件 ${fileName}`);
+    }
+  }
+
+  async installDependencies() {
+    console.log('\n📦 安装依赖...');
+    
+    const dependencies = ['axios@^1.6.0', 'cheerio@^1.0.0-rc.12'];
+    
+    for (const dep of dependencies) {
+      try {
+        console.log(`   安装 ${dep}...`);
+        execSync(`cd "${this.tavernRoot}" && npm install ${dep} --save`, {
+          stdio: 'inherit',
+          timeout: 120000
+        });
+      } catch (error) {
+        console.log(`   ⚠️  安装 ${dep} 失败: ${error.message}`);
+      }
+    }
+  }
+
+  async patchMainApplication() {
+    console.log('\n🔧 集成到主程序...');
+    
+    const mainFiles = this.findMainApplicationFiles();
+    
+    for (const mainFile of mainFiles) {
+      await this.patchFile(mainFile);
+    }
+    
+    if (mainFiles.length === 0) {
+      console.log('   ⚠️  未找到主程序文件，需要手动集成');
+      this.showManualIntegrationGuide();
+    }
+  }
+
+  findMainApplicationFiles() {
+    const possibleFiles = [
+      'app.js', 'server.js', 'index.js', 'main.js',
+      'src/app.js', 'src/server.js', 'src/index.js', 'src/main.js',
+      'dist/app.js', 'dist/server.js', 'dist/index.js', 'dist/main.js'
+    ];
+    
+    return possibleFiles.filter(file => 
+      fs.existsSync(path.join(this.tavernRoot, file))
+    );
+  }
+
+  async patchFile(filePath) {
+    console.log(`   处理文件: ${filePath}`);
     
     try {
-      this.showBanner();
-      this.checkEnvironment();
-      await this.createExtensionsDir();
-      this.copyPluginFiles();
-      this.installDependencies();
-      this.patchMainApp();
-      await this.integrateWithAdmin();
-      this.createConfig();
+      let content = fs.readFileSync(filePath, 'utf8');
+      let modified = false;
       
-      console.log('\n✅ 插件安装完成！');
-      this.showNextSteps();
+      // 添加引入语句
+      if (!content.includes('ai-tavern-image-grabber')) {
+        const importStatement = `\n// AI云酒馆图片抓取插件\nconst imageGrabber = require('./${path.relative(this.tavernRoot, path.join(this.extensionsDir, 'grabber.js'))}');\n`;
+        
+        if (content.includes('require(')) {
+          const lastRequire = content.lastIndexOf('require(');
+          const insertIndex = content.indexOf('\n', lastRequire) + 1;
+          content = content.slice(0, insertIndex) + importStatement + content.slice(insertIndex);
+          modified = true;
+        }
+      }
+      
+      // 添加API路由
+      if (!content.includes('/api/plugins/image-grabber')) {
+        const routeStatement = `\n// 图片抓取插件API路由\napp.use('/api/plugins/image-grabber', require('./${path.relative(this.tavernRoot, path.join(this.extensionsDir, 'admin-api.js'))}'));\n`;
+        
+        if (content.includes('app.use')) {
+          const lastAppUse = content.lastIndexOf('app.use(');
+          const insertIndex = content.indexOf('\n', lastAppUse) + 1;
+          content = content.slice(0, insertIndex) + routeStatement + content.slice(insertIndex);
+          modified = true;
+        }
+      }
+      
+      if (modified) {
+        // 备份原文件
+        const backupFile = filePath + '.backup.' + Date.now();
+        fs.copyFileSync(filePath, backupFile);
+        
+        fs.writeFileSync(filePath, content);
+        console.log(`   ✅ 成功修改 ${path.basename(filePath)}`);
+      } else {
+        console.log(`   ⚠️  ${path.basename(filePath)} 无需修改`);
+      }
       
     } catch (error) {
-      console.error('\n❌ 安装失败:', error.message);
-      process.exit(1);
+      console.log(`   ❌ 修改 ${filePath} 失败: ${error.message}`);
     }
+  }
+
+  async registerExtension() {
+    console.log('\n📝 注册扩展...');
+    
+    const registryFiles = this.findRegistryFiles();
+    
+    for (const registryFile of registryFiles) {
+      await this.updateRegistry(registryFile);
+    }
+    
+    if (registryFiles.length === 0) {
+      console.log('   ⚠️  未找到扩展注册文件');
+    }
+  }
+
+  findRegistryFiles() {
+    const possibleFiles = [
+      'extensions.json',
+      'plugins.json',
+      'extension-registry.json',
+      'src/config/extensions.json',
+      'config/plugins.json',
+      'public/scripts/extensions/manifest.json'
+    ];
+    
+    return possibleFiles.filter(file => 
+      fs.existsSync(path.join(this.tavernRoot, file))
+    );
+  }
+
+  async updateRegistry(registryPath) {
+    try {
+      let registry = {};
+      if (fs.existsSync(registryPath)) {
+        const content = fs.readFileSync(registryPath, 'utf8');
+        registry = JSON.parse(content);
+      }
+      
+      const extensionInfo = {
+        name: this.pluginName,
+        version: "1.1.0",
+        enabled: true,
+        path: path.relative(this.tavernRoot, this.extensionsDir),
+        manifest: "./manifest.json",
+        entry: "./grabber.js",
+        config: "./config.json"
+      };
+      
+      if (Array.isArray(registry)) {
+        // 数组格式的注册表
+        const existingIndex = registry.findIndex(ext => ext.name === this.pluginName);
+        if (existingIndex >= 0) {
+          registry[existingIndex] = extensionInfo;
+        } else {
+          registry.push(extensionInfo);
+        }
+      } else {
+        // 对象格式的注册表
+        registry[this.pluginName] = extensionInfo;
+      }
+      
+      fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+      console.log(`   ✅ 注册到: ${path.basename(registryPath)}`);
+      
+    } catch (error) {
+      console.log(`   ⚠️  注册到 ${path.basename(registryPath)} 失败: ${error.message}`);
+    }
+  }
+
+  async createManifestFile() {
+    const manifestPath = path.join(this.extensionsDir, 'manifest.json');
+    await this.createFile('manifest.json', manifestPath);
+  }
+
+  async createConfigFile() {
+    const configPath = path.join(this.extensionsDir, 'config.json');
+    if (!fs.existsSync(configPath)) {
+      await this.createFile('config.json', configPath);
+    } else {
+      console.log('   ✅ config.json 已存在（保留原配置）');
+    }
+  }
+
+  async promptContinue(question) {
+    return true; // 简化版本，总是继续
   }
 
   showBanner() {
     console.log(`
     ╔══════════════════════════════════════════════╗
     ║           AI云酒馆图片抓取插件               ║
-    ║             集成管理界面版 v1.0              ║
+    ║               修复版 v1.1.0                  ║
     ╚══════════════════════════════════════════════╝
     `);
-    console.log(`📍 云酒馆路径: ${this.tavernRoot}`);
-    console.log(`📍 插件路径: ${this.extensionsDir}\n`);
-  }
-
-  checkEnvironment() {
-    console.log('🔍 检查环境...');
-    
-    if (!fs.existsSync(path.join(this.tavernRoot, 'package.json'))) {
-      throw new Error('未找到云酒馆项目，请确保在正确目录运行');
-    }
-    
-    const appFiles = ['app.js', 'server.js', 'index.js', 'main.js'].filter(file => 
-      fs.existsSync(path.join(this.tavernRoot, file))
-    );
-    
-    if (appFiles.length === 0) {
-      throw new Error('未找到云酒馆主程序文件');
-    }
-    
-    this.mainAppFile = path.join(this.tavernRoot, appFiles[0]);
-    console.log(`   主程序文件: ${appFiles[0]}`);
-  }
-
-  async createExtensionsDir() {
-    console.log('\n📁 创建扩展目录...');
-    
-    if (fs.existsSync(this.extensionsDir)) {
-      console.log('   扩展目录已存在，执行更新操作');
-      const backupDir = this.extensionsDir + '.backup.' + Date.now();
-      if (fs.existsSync(this.extensionsDir)) {
-        fs.cpSync(this.extensionsDir, backupDir, { recursive: true });
-        console.log(`   旧版本已备份至: ${path.basename(backupDir)}`);
-      }
-    }
-    
-    fs.mkdirSync(this.extensionsDir, { recursive: true });
-    console.log('   扩展目录创建成功');
-  }
-
-  copyPluginFiles() {
-    console.log('\n📄 复制插件文件...');
-    
-    const filesToCopy = [
-      'grabber.js',
-      'admin-api.js',
-      'admin-integration.js',
-      'admin-component.vue',
-      'config.json'
-    ];
-    
-    filesToCopy.forEach(file => {
-      const source = path.join(this.pluginDir, file);
-      const target = path.join(this.extensionsDir, file);
-      
-      if (fs.existsSync(source)) {
-        fs.copyFileSync(source, target);
-        console.log(`   ✅ ${file}`);
-      } else {
-        console.log(`   ⚠️  ${file} 不存在`);
-      }
-    });
-  }
-
-  installDependencies() {
-    console.log('\n📦 安装依赖...');
-    
-    try {
-      const depsToInstall = ['axios@^1.6.0', 'cheerio@^1.0.0-rc.12'];
-      
-      depsToInstall.forEach(pkg => {
-        console.log(`   安装 ${pkg}...`);
-        execSync(`cd "${this.tavernRoot}" && npm install ${pkg}`, {
-          stdio: 'inherit'
-        });
-      });
-    } catch (error) {
-      console.log('   ⚠️  依赖安装跳过:', error.message);
-    }
-  }
-
-  patchMainApp() {
-    console.log('\n🔧 集成到主程序...');
-    
-    if (!fs.existsSync(this.mainAppFile)) {
-      console.log('   ⚠️  主程序文件不存在，跳过集成');
-      return;
-    }
-    
-    let content = fs.readFileSync(this.mainAppFile, 'utf8');
-    
-    // 备份原文件
-    const backupFile = this.mainAppFile + '.backup.' + Date.now();
-    fs.copyFileSync(this.mainAppFile, backupFile);
-    console.log(`   原文件已备份: ${path.basename(backupFile)}`);
-    
-    // 检查是否已经集成
-    if (content.includes('ai-tavern-image-grabber')) {
-      console.log('   ⚠️  检测到已集成，跳过...');
-      return;
-    }
-    
-    // 添加引入语句
-    const importStatement = `\n// AI云酒馆图片抓取插件\nconst imageGrabber = require('./extensions/ai-tavern-image-grabber/grabber');\n`;
-    
-    if (content.includes('require(')) {
-      const lastRequire = content.lastIndexOf('require(');
-      const insertIndex = content.indexOf('\n', lastRequire) + 1;
-      content = content.slice(0, insertIndex) + importStatement + content.slice(insertIndex);
-    } else {
-      content = importStatement + content;
-    }
-    
-    // 添加API路由
-    const expressPattern = /app\.use\(express\.json\(\)\);/;
-    if (expressPattern.test(content)) {
-      content = content.replace(expressPattern, 
-        `app.use(express.json());\n\n// 图片抓取插件API路由\napp.use('/api/plugins/image-grabber', require('./extensions/ai-tavern-image-grabber/admin-api'));`
-      );
-    }
-    
-    // 在AI回复处理中添加钩子
-    this.injectAIResponseHook(content);
-    
-    fs.writeFileSync(this.mainAppFile, content);
-    console.log('   ✅ 主程序集成完成');
-  }
-
-  injectAIResponseHook(content) {
-    const patterns = [
-      /(async\s+)?function\s+generateAIResponse\s*\([^)]*\)\s*{/g,
-      /(let|const|var)\s+aiResponse\s*=\s*await\s+generateAIResponse\([^)]*\);/g,
-      /app\.(post|get)\(['"]\/api\/chat['"][^}]+{([^}]*)(await\s+)?generateAIResponse[^}]*}/g
-    ];
-    
-    for (const pattern of patterns) {
-      if (pattern.test(content)) {
-        content = content.replace(pattern, (match) => {
-          if (match.includes('function')) {
-            return match.replace(/(async\s+)?function\s+generateAIResponse\s*\([^)]*\)\s*{/, 
-              `$&\\n  // 图片抓取插件处理\\n  if (imageGrabber && imageGrabber.isEnabled()) {\\n    text = await imageGrabber.addImageToText(text);\\n  }`);
-          } else if (match.includes('aiResponse')) {
-            return match + `\\n  // 图片抓取插件处理\\n  if (imageGrabber && imageGrabber.isEnabled()) {\\n    aiResponse = await imageGrabber.addImageToText(aiResponse);\\n  }`;
-          }
-          return match;
-        });
-        console.log('   ✅ AI回复钩子注入完成');
-        return;
-      }
-    }
-    
-    console.log('   ⚠️  未找到AI回复函数，需要手动集成');
-  }
-
-  async integrateWithAdmin() {
-    console.log('\n🎨 集成到管理界面...');
-    
-    // 查找管理界面文件
-    const adminFiles = this.findAdminFiles();
-    
-    if (adminFiles.length === 0) {
-      console.log('   ⚠️  未找到管理界面文件，提供手动集成指南');
-      this.showManualIntegrationGuide();
-      return;
-    }
-    
-    for (const adminFile of adminFiles) {
-      await this.injectIntoAdminFile(adminFile);
-    }
-  }
-
-  findAdminFiles() {
-    const possiblePaths = [
-      'admin.html',
-      'admin.js',
-      'src/admin/Admin.vue',
-      'src/components/Admin.vue',
-      'public/admin.html',
-      'views/admin.ejs',
-      'pages/admin.vue'
-    ];
-    
-    return possiblePaths.filter(file => 
-      fs.existsSync(path.join(this.tavernRoot, file))
-    );
-  }
-
-  async injectIntoAdminFile(adminFile) {
-    const fullPath = path.join(this.tavernRoot, adminFile);
-    console.log(`   处理管理文件: ${adminFile}`);
-    
-    let content = fs.readFileSync(fullPath, 'utf8');
-    let modified = false;
-    
-    if (adminFile.endsWith('.vue')) {
-      modified = this.injectIntoVueFile(content, fullPath);
-    } else if (adminFile.endsWith('.html')) {
-      modified = this.injectIntoHtmlFile(content, fullPath);
-    } else if (adminFile.endsWith('.js')) {
-      modified = this.injectIntoJsFile(content, fullPath);
-    }
-    
-    if (modified) {
-      console.log(`   ✅ 成功集成到 ${adminFile}`);
-    } else {
-      console.log(`   ⚠️  无法自动集成到 ${adminFile}`);
-    }
-  }
-
-  injectIntoVueFile(content, filePath) {
-    if (content.includes('image-grabber-settings')) return false;
-    
-    // 注入模板
-    const templateInjection = /<div class="settings-section">/;
-    if (templateInjection.test(content)) {
-      content = content.replace(templateInjection, 
-        `$&\\n      <image-grabber-settings></image-grabber-settings>`);
-    }
-    
-    // 注入脚本
-    const scriptInjection = /<script>/;
-    if (scriptInjection.test(content)) {
-      content = content.replace(scriptInjection, 
-        `<script>\\nimport ImageGrabberSettings from '../extensions/ai-tavern-image-grabber/admin-component.vue';`);
-      
-      const componentsInjection = /components:\s*{/;
-      if (componentsInjection.test(content)) {
-        content = content.replace(componentsInjection, 
-          'components: {\\n    ImageGrabberSettings,');
-      }
-    }
-    
-    fs.writeFileSync(filePath, content);
-    return true;
-  }
-
-  injectIntoHtmlFile(content, filePath) {
-    if (content.includes('image-grabber-settings')) return false;
-    
-    // 简单的HTML注入
-    const injectionPoint = /<div class="settings-section">/;
-    if (injectionPoint.test(content)) {
-      content = content.replace(injectionPoint, 
-        `$&\\n    <div id="image-grabber-settings"></div>`);
-      
-      // 添加脚本引用
-      const bodyEnd = /<\/body>/;
-      if (bodyEnd.test(content)) {
-        content = content.replace(bodyEnd, 
-          `<script src="/extensions/ai-tavern-image-grabber/admin-integration.js"></script>\\n</body>`);
-      }
-    }
-    
-    fs.writeFileSync(filePath, content);
-    return true;
-  }
-
-  injectIntoJsFile(content, filePath) {
-    if (content.includes('ImageGrabberSettings')) return false;
-    
-    // 在合适的JS文件中添加集成代码
-    const integrationCode = `\\n// 图片抓取插件集成\\nimport ImageGrabberSettings from '../extensions/ai-tavern-image-grabber/admin-component.vue';\\n`;
-    
-    if (content.includes('import')) {
-      const lastImport = content.lastIndexOf('import');
-      const insertIndex = content.indexOf('\\n', lastImport) + 1;
-      content = content.slice(0, insertIndex) + integrationCode + content.slice(insertIndex);
-    } else {
-      content = integrationCode + content;
-    }
-    
-    fs.writeFileSync(filePath, content);
-    return true;
-  }
-
-  showManualIntegrationGuide() {
-    console.log('\\n📝 手动集成指南:');
-    console.log(`
-1. 在管理界面的合适位置添加:
-   <image-grabber-settings></image-grabber-settings>
-
-2. 引入组件:
-   import ImageGrabberSettings from './extensions/ai-tavern-image-grabber/admin-component.vue';
-
-3. 注册组件:
-   components: { ImageGrabberSettings }
-
-4. 或使用HTML方式:
-   <div id="image-grabber-settings"></div>
-   <script src="/extensions/ai-tavern-image-grabber/admin-integration.js"></script>
-    `);
-  }
-
-  createConfig() {
-    console.log('\\n⚙️  创建配置文件...');
-    
-    const configFile = path.join(this.extensionsDir, 'config.json');
-    const defaultConfig = {
-      "enabled": true,
-      "targetWebsite": "https://www.kchai.org/",
-      "imageSelectors": ["img[src*='.jpg']", "img[src*='.png']", "img[src*='.webp']"],
-      "excludeKeywords": ["icon", "logo", "ad", "spacer"],
-      "insertPosition": "after_first_sentence",
-      "maxImageWidth": "400px",
-      "requestTimeout": 5000,
-      "cacheDuration": 300000,
-      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    };
-    
-    if (!fs.existsSync(configFile)) {
-      fs.writeFileSync(configFile, JSON.stringify(defaultConfig, null, 2));
-      console.log('   ✅ 默认配置文件已创建');
-    }
   }
 
   showNextSteps() {
-    console.log('\\n🎉 安装完成！接下来:');
+    console.log('\n🎉 下一步操作:');
     console.log(`
 1. 重启云酒馆服务:
    cd "${this.tavernRoot}"
    npm start
 
-2. 访问管理界面配置图片抓取设置
+2. 访问管理界面配置插件
 
-3. 测试功能是否正常工作
+3. 测试图片抓取功能
 
-4. 如有问题请参考项目README文件
+4. 如有问题运行修复命令:
+   npx github:yourusername/ai-tavern-image-grabber --fix
+    `);
+  }
+
+  showTroubleshootingTips(error) {
+    console.log('\n🔧 故障排除建议:');
+    console.log(`
+• 检查目录权限: sudo chown -R $USER "${this.tavernRoot}"
+• 手动创建manifest.json文件
+• 尝试修复模式: npm run fix
+• 查看详细日志: 设置 DEBUG=tavern-installer 环境变量
+    `);
+    
+    if (error.message.includes('manifest.json')) {
+      console.log('\n📋 Manifest文件问题解决方案:');
+      console.log(`
+1. 手动创建manifest.json:
+   echo '${JSON.stringify({
+     "name": "ai-tavern-image-grabber",
+     "version": "1.1.0",
+     "description": "AI云酒馆图片抓取插件",
+     "type": "extension",
+     "entry": "./grabber.js"
+   }, null, 2)}' > "${path.join(this.extensionsDir, 'manifest.json')}"
+
+2. 重新运行安装程序
+      `);
+    }
+  }
+
+  showManualIntegrationGuide() {
+    console.log('\n📝 手动集成指南:');
+    console.log(`
+1. 在主程序文件顶部添加:
+   const imageGrabber = require('./${path.relative(this.tavernRoot, path.join(this.extensionsDir, 'grabber.js'))}');
+
+2. 添加API路由:
+   app.use('/api/plugins/image-grabber', require('./${path.relative(this.tavernRoot, path.join(this.extensionsDir, 'admin-api.js'))}'));
+
+3. 在AI回复处理中添加:
+   if (imageGrabber.isEnabled()) {
+     response = await imageGrabber.addImageToText(response);
+   }
     `);
   }
 }
