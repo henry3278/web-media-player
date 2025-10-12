@@ -1,135 +1,347 @@
-// 文件名: index.js (目录自动扫描版 v10.0.0)
+// 文件名: index.js (智能自适应版 v8.0)
 (function () {
-    const extensionName = 'local-media-player';
-    const extensionVersion = '10.0.0';
+    const extensionName = 'smart-media-collector';
+    const extensionVersion = '8.0.0';
 
-    const defaultSettings = { enabled: true, mediaType: 'image', maxWidth: '80%', maxHeight: '450px', borderRadius: '8px', showBorder: true, };
+    // 智能网站规则库
+    const intelligentRules = {
+        'kchai.org': {
+            name: 'KChai图库',
+            parseMode: 'html',
+            selector: '.post-item img, .grid-item img, article img',
+            attribute: 'data-src',
+            useProxy: true,
+            confidence: 0.9
+        },
+        'xsnvshen.co': {
+            name: '女神站',
+            parseMode: 'html', 
+            selector: '.photo-item img, .gallery-img, .album-img',
+            attribute: 'data-src',
+            useProxy: true,
+            confidence: 0.7
+        },
+        'inewgirl.com': {
+            name: 'NewGirl',
+            parseMode: 'json',
+            jsonPath: 'data.feedList',
+            urlKey: 'img',
+            useProxy: false,
+            confidence: 0.95,
+            // 专用JSON解析器
+            customParser: function(data) {
+                try {
+                    const nuxtData = window.__NUXT__ || data;
+                    if (nuxtData && nuxtData.data && Array.isArray(nuxtData.data[0]?.feedList)) {
+                        return nuxtData.data[0].feedList.map(item => item.img).filter(url => url && url.includes('http'));
+                    }
+                } catch (e) {}
+                return [];
+            }
+        },
+        // 通用规则（兜底）
+        'default': {
+            parseMode: 'html',
+            selector: 'img',
+            attribute: 'src',
+            useProxy: true,
+            confidence: 0.3
+        }
+    };
+
+    const defaultSettings = {
+        enabled: true,
+        sourceUrl: '',
+        mediaType: 'image',
+        autoDetect: true, // 新增：智能检测开关
+        manualMode: 'auto', // auto, html, json
+        manualSelector: 'img',
+        manualJsonPath: 'data.images',
+        manualUrlKey: 'url',
+        useProxy: true,
+        maxWidth: '80%',
+        maxHeight: '450px'
+    };
+
     let settings = { ...defaultSettings };
-    let mediaCache = { photos: [], videos: [] };
+    let mediaCache = [];
 
+    /**
+     * 智能网站检测器
+     */
+    function detectSiteConfig(url) {
+        const domain = new URL(url).hostname;
+        
+        // 精确匹配
+        for (const [siteDomain, config] of Object.entries(intelligentRules)) {
+            if (domain.includes(siteDomain) || siteDomain.includes(domain)) {
+                console.log(`[${extensionName}] 智能匹配到网站: ${config.name}`);
+                return { ...config, detected: true };
+            }
+        }
+        
+        // 使用默认规则
+        console.log(`[${extensionName}] 使用默认规则采集: ${domain}`);
+        return { ...intelligentRules.default, detected: false };
+    }
+
+    /**
+     * 智能采集引擎
+     */
+    async function intelligentCollect(url) {
+        const siteConfig = settings.autoDetect ? detectSiteConfig(url) : getManualConfig();
+        
+        try {
+            if (siteConfig.parseMode === 'html') {
+                return await smartHTMLCollect(url, siteConfig);
+            } else {
+                return await smartJSONCollect(url, siteConfig);
+            }
+        } catch (error) {
+            console.warn(`[${extensionName}] 智能采集失败，尝试备用方案:`, error);
+            return await fallbackCollect(url);
+        }
+    }
+
+    /**
+     * 智能HTML采集
+     */
+    async function smartHTMLCollect(url, config) {
+        const debugInfo = $('#smc-debug-info');
+        const finalUrl = url;
+        let requestUrl, fetchOptions = {};
+
+        if (config.useProxy) {
+            requestUrl = '/api/proxy';
+            fetchOptions = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: finalUrl,
+                    method: 'GET',
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                })
+            };
+        } else {
+            requestUrl = finalUrl;
+        }
+
+        const response = await fetch(requestUrl, fetchOptions);
+        if (!response.ok) throw new Error(`HTTP错误: ${response.status}`);
+
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        // 多选择器尝试策略
+        const selectors = Array.isArray(config.selector) ? config.selector : [config.selector];
+        let mediaUrls = [];
+        
+        for (const selector of selectors) {
+            const elements = doc.querySelectorAll(selector);
+            console.log(`[${extensionName}] 尝试选择器 "${selector}"，找到 ${elements.length} 个元素`);
+            
+            if (elements.length > 0) {
+                elements.forEach(el => {
+                    const src = el.dataset[config.attribute] || el.getAttribute(config.attribute) || el.src;
+                    if (src && src.startsWith('http')) {
+                        mediaUrls.push(src);
+                    }
+                });
+                break; // 使用第一个成功的选择器
+            }
+        }
+        
+        return mediaUrls;
+    }
+
+    /**
+     * 智能JSON采集（特别优化inewgirl.com）
+     */
+    async function smartJSONCollect(url, config) {
+        const debugInfo = $('#smc-debug-info');
+        let requestUrl = url;
+        let fetchOptions = {};
+        
+        if (config.useProxy) {
+            requestUrl = '/api/proxy';
+            fetchOptions = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url, method: 'GET' })
+            };
+        }
+
+        const response = await fetch(requestUrl, fetchOptions);
+        if (!response.ok) throw new Error(`HTTP错误: ${response.status}`);
+
+        // 特殊处理inewgirl.com的NUXT数据
+        if (config.customParser) {
+            const html = await response.text();
+            // 尝试从script标签提取NUXT数据
+            const nuxtMatch = html.match(/window\.__NUXT__\s*=\s*({[^;]+});/);
+            if (nuxtMatch) {
+                try {
+                    const nuxtData = JSON.parse(nuxtMatch[1]);
+                    return config.customParser(nuxtData);
+                } catch (e) {
+                    console.warn('解析NUXT数据失败:', e);
+                }
+            }
+        }
+
+        // 标准JSON解析
+        const data = await response.json();
+        if (config.customParser) {
+            return config.customParser(data);
+        }
+        
+        const items = getObjectByPath(data, config.jsonPath);
+        if (!Array.isArray(items)) throw new Error('JSON路径无效');
+        
+        return items.map(item => item[config.urlKey]).filter(url => url && url.startsWith('http'));
+    }
+
+    /**
+     * 备用采集方案
+     */
+    async function fallbackCollect(url) {
+        console.log(`[${extensionName}] 启用备用采集方案`);
+        // 尝试通用图片采集
+        const elements = document.querySelectorAll('img');
+        return Array.from(elements).map(img => img.src).filter(src => src.startsWith('http'));
+    }
+
+    // 辅助函数
+    function getObjectByPath(obj, path) {
+        return path.split('.').reduce((acc, part) => acc && acc[part], obj);
+    }
+
+    function getManualConfig() {
+        return {
+            parseMode: settings.manualMode === 'auto' ? 'html' : settings.manualMode,
+            selector: settings.manualSelector,
+            jsonPath: settings.manualJsonPath,
+            urlKey: settings.manualUrlKey,
+            useProxy: settings.useProxy
+        };
+    }
+
+    // 设置面板（简化版，专注于智能功能）
     function addSettingsPanel() {
         const settingsHtml = `
-            <div class="list-group-item" id="local-media-player-settings">
+            <div class="list-group-item" id="smart-media-settings">
                 <div class="d-flex w-100 justify-content-between">
-                    <h5 class="mb-1">📁 本地媒体播放器 (自动扫描)</h5>
+                    <h5 class="mb-1">🤖 智能媒体采集器</h5>
                     <small>v${extensionVersion}</small>
                 </div>
-                <p class="mb-2 text-muted">自动扫描插件目录下的 <code>photos</code> 和 <code>videos</code> 文件夹。</p>
                 
-                <div class="wmp-collapsible active">⚙️ 基础设置</div>
-                <div class="wmp-collapsible-content" style="display: block;">
-                    <div class="form-group"><label><input type="checkbox" id="wmp-enabled" ${settings.enabled ? 'checked' : ''}> 启用插件</label></div>
-                    <div class="form-group">
-                        <label for="wmp-mediaType">📺 媒体类型</label>
-                        <select id="wmp-mediaType" class="form-control">
-                            <option value="image" ${settings.mediaType === 'image' ? 'selected' : ''}>仅图片</option>
-                            <option value="video" ${settings.mediaType === 'video' ? 'selected' : ''}>仅视频</option>
-                            <option value="both" ${settings.mediaType === 'both' ? 'selected' : ''}>图片和视频</option>
-                        </select>
-                    </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="smc-enabled" ${settings.enabled ? 'checked' : ''}> 启用插件</label>
                 </div>
-
-                <div class="wmp-collapsible">🎨 显示设置</div>
-                <div class="wmp-collapsible-content">
-                    <div class="row">
-                        <div class="col-6"><label for="wmp-maxWidth">最大宽度</label><input type="text" id="wmp-maxWidth" class="form-control" value="${settings.maxWidth}"></div>
-                        <div class="col-6"><label for="wmp-maxHeight">最大高度</label><input type="text" id="wmp-maxHeight" class="form-control" value="${settings.maxHeight}"></div>
-                    </div>
-                    <div class="form-group mt-2"><label for="wmp-borderRadius">圆角大小</label><input type="text" id="wmp-borderRadius" class="form-control" value="${settings.borderRadius}"></div>
-                    <div class="form-group"><label><input type="checkbox" id="wmp-showBorder" ${settings.showBorder ? 'checked' : ''}> 显示边框</label></div>
+                
+                <div class="form-group">
+                    <label for="smc-sourceUrl">🔗 资源网址</label>
+                    <input type="text" id="smc-sourceUrl" class="form-control" value="${settings.sourceUrl}" placeholder="输入网址，插件自动识别">
                 </div>
-
-                <div class="wmp-collapsible">🔍 文件管理</div>
-                <div class="wmp-collapsible-content">
-                    <div class="wmp-test-area">
-                        <p class="text-muted small">上传新文件后，请点击下方按钮刷新。</p>
-                        <button type="button" id="wmp-refresh-files" class="btn btn-primary btn-sm wmp-btn">🔄 扫描文件夹</button>
-                        <div id="wmp-file-status" class="wmp-status"></div>
-                    </div>
+                
+                <div class="form-group">
+                    <label><input type="checkbox" id="smc-autoDetect" ${settings.autoDetect ? 'checked' : ''}> 智能网站识别</label>
+                    <small class="form-text text-muted">自动识别常见图片网站并应用最优采集规则</small>
+                </div>
+                
+                <div class="form-group">
+                    <label><input type="checkbox" id="smc-useProxy" ${settings.useProxy ? 'checked' : ''}> 使用代理请求</label>
+                </div>
+                
+                <div class="wmp-test-area">
+                    <button type="button" id="smc-test-collect" class="btn btn-primary btn-sm">🔍 智能测试</button>
+                    <div id="smc-debug-info" class="wmp-status info"></div>
+                    <div id="smc-test-result" class="wmp-status"></div>
                 </div>
             </div>
         `;
         $('#extensions_settings').append(settingsHtml);
     }
 
+    // 事件监听
     function addSettingsEventListeners() {
-        $('#local-media-player-settings').on('change', '#wmp-enabled', updateSetting('enabled', 'checkbox'));
-        $('#local-media-player-settings').on('change', '#wmp-mediaType', updateSetting('mediaType', 'text'));
-        $('#local-media-player-settings').on('input', '#wmp-maxWidth', updateSetting('maxWidth', 'text'));
-        $('#local-media-player-settings').on('input', '#wmp-maxHeight', updateSetting('maxHeight', 'text'));
-        $('#local-media-player-settings').on('input', '#wmp-borderRadius', updateSetting('borderRadius', 'text'));
-        $('#local-media-player-settings').on('change', '#wmp-showBorder', updateSetting('showBorder', 'checkbox'));
-        $('#local-media-player-settings').on('click', '#wmp-refresh-files', refreshFileList);
-        $('#local-media-player-settings').on('click', '.wmp-collapsible', function() { $(this).toggleClass('active'); $(this).next('.wmp-collapsible-content').slideToggle(); });
+        $('#smart-media-settings').on('change', '#smc-enabled', updateSetting('enabled', 'checkbox'));
+        $('#smart-media-settings').on('input', '#smc-sourceUrl', updateSetting('sourceUrl', 'text', true));
+        $('#smart-media-settings').on('change', '#smc-autoDetect', updateSetting('autoDetect', 'checkbox'));
+        $('#smart-media-settings').on('change', '#smc-useProxy', updateSetting('useProxy', 'checkbox'));
+        $('#smart-media-settings').on('click', '#smc-test-collect', testIntelligentCollect);
     }
 
-    /**
-     * 【全新核心】扫描目录列表
-     * @param {string} dirPath - 要扫描的目录路径, e.g., '/photos/'
-     * @param {RegExp} fileRegex - 用于匹配文件名的正则表达式
-     * @returns {Promise<string[]>} - 媒体文件的完整URL数组
-     */
-    async function scanDirectory(dirPath, fileRegex) {
-        const baseUrl = `/extensions/third-party/web-media-player${dirPath}`;
-        const response = await fetch(baseUrl);
-        if (!response.ok) {
-            throw new Error(`访问目录 ${baseUrl} 失败 (HTTP ${response.status})。可能是云服务商禁用了目录浏览功能。`);
-        }
-
-        const html = await response.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
+    async function testIntelligentCollect() {
+        const status = $('#smc-test-result');
+        const debugInfo = $('#smc-debug-info');
         
-        const urls = [];
-        const links = doc.querySelectorAll('a');
-
-        links.forEach(link => {
-            const href = link.getAttribute('href');
-            if (href && fileRegex.test(href)) {
-                // new URL() 会自动处理相对路径和绝对路径，非常稳健
-                const fullUrl = new URL(href, response.url).href;
-                urls.push(fullUrl);
-            }
-        });
-        
-        return urls;
-    }
-
-    /**
-     * 刷新文件列表 - 通过扫描目录实现
-     */
-    async function refreshFileList() {
-        const status = $('#wmp-file-status');
-        status.removeClass('success error info').html('🔄 正在扫描文件夹...').addClass('info').show();
+        status.removeClass('success error').html('🔍 智能识别中...').addClass('info').show();
+        debugInfo.html('').show();
         
         try {
-            const photoRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
-            const videoRegex = /\.(mp4|webm|ogg|mov)$/i;
-
-            // 并行扫描 photos 和 videos 文件夹
-            const [photoUrls, videoUrls] = await Promise.all([
-                scanDirectory('/photos/', photoRegex).catch(e => { console.warn(e); return []; }), // 如果一个失败，不影响另一个
-                scanDirectory('/videos/', videoRegex).catch(e => { console.warn(e); return []; })
-            ]);
-
-            mediaCache = {
-                photos: [...new Set(photoUrls)], // 去重
-                videos: [...new Set(videoUrls)]
-            };
-            
-            if (mediaCache.photos.length === 0 && mediaCache.videos.length === 0) {
-                 status.html(`❌ 未扫描到任何媒体文件。请检查文件夹是否为空，或确认云服务商是否支持目录浏览。`).addClass('error');
+            const urls = await intelligentCollect(settings.sourceUrl);
+            if (urls.length > 0) {
+                status.html(`✅ 智能采集成功！找到 ${urls.length} 个媒体文件`).addClass('success');
+                debugInfo.html(`识别规则: ${detectSiteConfig(settings.sourceUrl).name}<br>采集模式: ${detectSiteConfig(settings.sourceUrl).parseMode}`);
+                mediaCache = urls;
             } else {
-                 status.html(`✅ 成功扫描到 ${mediaCache.photos.length} 张图片 和 ${mediaCache.videos.length} 个视频。`).addClass('success');
+                status.html('❌ 未找到媒体文件').addClass('error');
             }
-
         } catch (error) {
-            status.html(`❌ 扫描失败: ${error.message}`).addClass('error');
+            status.html(`❌ 采集失败: ${error.message}`).addClass('error');
         }
     }
 
-    // ... (其余所有辅助函数，如 getRandomMediaUrl, autoInsertMedia 等都与之前版本相同，无需修改) ...
-    function getRandomMediaUrl() { const { photos, videos } = mediaCache; let availableUrls = []; if (settings.mediaType === 'image') { availableUrls = photos; } else if (settings.mediaType === 'video') { availableUrls = videos; } else { availableUrls = [...photos, ...videos]; } if (availableUrls.length === 0) { console.warn(`[${extensionName}] 没有可用的媒体文件来插入。`); return null; } const randomIndex = Math.floor(Math.random() * availableUrls.length); return availableUrls[randomIndex]; } function updateSetting(key, type) { return async function() { const value = type === 'checkbox' ? $(this).is(':checked') : $(this).val(); settings[key] = value; await SillyTavern.extension.saveSettings(extensionName, settings); updateMediaStyles(); }; } function updateMediaStyles() { const style = ` .web-media-player-container img, .web-media-player-container video { max-width: ${settings.maxWidth} !important; max-height: ${settings.maxHeight} !important; border-radius: ${settings.borderRadius} !important; border: ${settings.showBorder ? '2px solid #e9ecef' : 'none'} !important; } `; $('#wmp-dynamic-styles').remove(); $('head').append(`<style id="wmp-dynamic-styles">${style}</style>`); } function isVideoUrl(url) { return ['.mp4', '.webm', '.ogg', '.mov'].some(ext => url.toLowerCase().endsWith(ext)); } async function autoInsertMedia(type, data) { const message = data.message; if (!settings.enabled || message.is_user || !message.mes) return; const messageElement = document.querySelector(`#mes_${message.id} .mes_text`); if (!messageElement) return; const mediaUrl = getRandomMediaUrl(); if (!mediaUrl) return; const container = document.createElement('div'); container.className = 'web-media-player-container'; const isVideo = isVideoUrl(mediaUrl); let mediaElement; if (isVideo) { mediaElement = document.createElement('video'); mediaElement.src = mediaUrl; mediaElement.controls = true; mediaElement.loop = true; mediaElement.muted = true; } else { mediaElement = document.createElement('img'); mediaElement.src = mediaUrl; mediaElement.onclick = () => window.open(mediaUrl, '_blank'); } container.appendChild(mediaElement); messageElement.appendChild(container); updateMediaStyles(); }
-    $(document).ready(async function () { try { const loadedSettings = await SillyTavern.extension.loadSettings(extensionName); settings = { ...defaultSettings, ...loadedSettings }; } catch (error) { console.error(`[${extensionName}] 加载设置失败:`, error); } addSettingsPanel(); addSettingsEventListeners(); updateMediaStyles(); SillyTavern.events.on('message-rendered', autoInsertMedia); await refreshFileList(); console.log(`[${extensionName} v${extensionVersion}] 本地播放器(自动扫描版)已加载`); });
+    // 原有的autoInsertMedia等函数保持不变
+    async function autoInsertMedia(type, data) {
+        const message = data.message;
+        if (!settings.enabled || message.is_user || !message.mes) return;
+
+        const messageElement = document.querySelector(`#mes_${message.id} .mes_text`);
+        if (!messageElement) return;
+
+        const mediaUrl = await getRandomMediaUrl();
+        if (!mediaUrl) return;
+
+        const container = document.createElement('div');
+        container.className = 'media-container';
+        const mediaElement = document.createElement('img');
+        mediaElement.src = mediaUrl;
+        mediaElement.style.maxWidth = settings.maxWidth;
+        mediaElement.style.maxHeight = settings.maxHeight;
+        mediaElement.onclick = () => window.open(mediaUrl, '_blank');
+        
+        container.appendChild(mediaElement);
+        messageElement.appendChild(container);
+    }
+
+    async function getRandomMediaUrl() {
+        if (mediaCache.length === 0) {
+            try {
+                const urls = await intelligentCollect(settings.sourceUrl);
+                mediaCache = urls;
+            } catch (error) {
+                return null;
+            }
+        }
+        return mediaCache[Math.floor(Math.random() * mediaCache.length)];
+    }
+
+    // 初始化
+    $(document).ready(async function () {
+        try {
+            const loadedSettings = await SillyTavern.extension.loadSettings(extensionName);
+            settings = { ...defaultSettings, ...loadedSettings };
+        } catch (error) {
+            console.error(`[${extensionName}] 加载设置失败:`, error);
+        }
+
+        addSettingsPanel();
+        addSettingsEventListeners();
+        SillyTavern.events.on('message-rendered', autoInsertMedia);
+        console.log(`[${extensionName} v${extensionVersion}] 智能采集器已加载`);
+    });
 
 })();
