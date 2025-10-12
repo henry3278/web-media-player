@@ -1,22 +1,21 @@
-// 确保在插件加载时注册设置面板
-if (typeof extensions !== 'undefined') {
-    // 默认配置
-    const defaultSettings = {
-        maxWidth: '100%',
-        maxHeight: '400px',
-        autoPlayVideos: false,
-        allowedDomains: 'i.imgur.com,example.com'
+// 默认配置
+const defaultSettings = {
+    maxWidth: '100%',
+    maxHeight: '400px',
+    autoPlayVideos: false,
+    allowedDomains: 'i.imgur.com,example.com'
+};
+
+// 加载配置
+function loadSettings() {
+    return {
+        ...defaultSettings,
+        ...JSON.parse(localStorage.getItem('webMediaPlayerSettings') || '{}')
     };
+}
 
-    // 加载配置
-    function loadSettings() {
-        return {
-            ...defaultSettings,
-            ...JSON.parse(localStorage.getItem('webMediaPlayerSettings') || '{}')
-        };
-    }
-
-    // 注册设置面板
+// 注册设置面板
+window.addEventListener('extensionsLoaded', () => {
     extensions.registerSettings('webMediaPlayer', {
         name: 'Web Media Player',
         icon: '🎬',
@@ -73,7 +72,7 @@ if (typeof extensions !== 'undefined') {
             }
             
             .web-media-container video {
-                ${settings.autoPlayVideos ? 'autoplay muted playsinline' : ''}
+                ${settings.autoPlayVideos ? 'autoplay: true; muted: true; playsinline: true;' : ''}
             }
         `;
         
@@ -85,6 +84,4 @@ if (typeof extensions !== 'undefined') {
 
     // 初始化应用设置
     applyMediaSettings();
-} else {
-    console.error('无法注册设置面板: extensions API 不可用');
-}
+});
