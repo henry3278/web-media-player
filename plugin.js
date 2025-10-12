@@ -5,16 +5,16 @@ export default {
     description: '从网络加载图片/视频并在聊天中展示',
     
     // 加载依赖文件
-    load() {
+    async load() {
         // 加载CSS
         const style = document.createElement('link');
         style.rel = 'stylesheet';
-        style.href = 'plugins/st_web_media_player/style.css';
+        style.href = 'plugins/third-party/st_web_media_player/style.css';
         document.head.appendChild(style);
         
-        // 加载JS文件
-        this.loadScript('script.js');
-        this.loadScript('settings.js');
+        // 加载JS文件 - 确保settings.js在script.js之前加载
+        await this.loadScript('settings.js');
+        await this.loadScript('script.js');
         
         console.log('Web Media Player 插件已加载');
     },
@@ -22,7 +22,7 @@ export default {
     // 卸载清理
     unload() {
         // 移除CSS
-        const style = document.querySelector('link[href="plugins/st_web_media_player/style.css"]');
+        const style = document.querySelector('link[href="plugins/third-party/st_web_media_player/style.css"]');
         if (style) style.remove();
         
         // 移除动态样式
@@ -36,7 +36,7 @@ export default {
     loadScript(src) {
         return new Promise((resolve) => {
             const script = document.createElement('script');
-            script.src = `plugins/st_web_media_player/${src}`;
+            script.src = `plugins/third-party/st_web_media_player/${src}`;
             script.onload = resolve;
             document.head.appendChild(script);
         });
