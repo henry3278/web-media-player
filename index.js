@@ -1,12 +1,11 @@
-// 文件名: index.js (最终版 v2.2)
-(function () {
-    // 插件元数据
-    const extensionName = 'web-media-player';
-    const extensionAuthor = 'Your Name & AI Assistant';
-    const extensionVersion = '2.2.0';
+// 文件名: index.js (最终版 v3.0 - 模块化规范)
+
+class WebMediaPlayer {
+    // 插件的上下文对象，由SillyTavern在创建实例时传入
+    context;
 
     // 默认设置
-    const defaultSettings = {
+    defaultSettings = {
         enabled: true,
         sourceUrl: '',
         startTrigger: '【图片】',
@@ -14,37 +13,77 @@
         removeTriggers: true,
     };
 
-    let settings = { ...defaultSettings };
-    let context = null; // 保存上下文对象
+    // 插件的当前设置
+    settings = { ...this.defaultSettings };
 
-    // =================================================================================
-    // 核心功能逻辑 (这部分与UI无关，比较稳定)
-    // =================================================================================
+    constructor(context) {
+        this.context = context;
+    }
 
-    async function fetchMediaUrl(query) {
-        if (!settings.sourceUrl) {
-            console.warn(`[${extensionName}] Source URL is not set.`);
-            return null;
-        }
-        const requestUrl = `${settings.sourceUrl}${encodeURIComponent(query)}`;
-        console.log(`[${extensionName}] Fetching media for query "${query}" from: ${requestUrl}`);
+    /**
+     * onLoad - 这是新规范下的主入口函数，在插件加载时被调用
+     */
+    async onLoad() {
         try {
-            // 【临时占位符】返回一个示例图片，方便你测试插件的其他部分是否正常工作。
-            return `https://source.unsplash.com/random/800x600?${query}`;
+            // 1. 加载设置
+            this.settings = { ...this.defaultSettings, ...(await this.context.loadSettings()) };
+
+            // 2. 构建设置面板的HTML
+            const settingsHtml = this.buildSettingsHtml();
+            this.context.addSettings(settingsHtml);
+
+            // 3. 为设置面板的元素绑定事件监听器
+            this.addSettingsEventListeners();
+
+            // 4. 监听SillyTavern的消息渲染事件
+            SillyTavern.events.on('message-rendered', (type, data) => this.displayMediaInMessage(type, data));
+            
+            console.log(`[Web Media Player v3.0.0] Loaded successfully using modern module specification.`);
+
         } catch (error) {
-            console.error(`[${extensionName}] Error fetching media:`, error);
-            SillyTavern.system.showToast(`[${extensionName}] Error fetching media: ${error.message}`, 'error');
-            return null;
+            console.error(`[Web Media Player] An error occurred during onLoad:`, error);
+            alert(`[Web Media Player] Failed to load. Check F12 console for errors.`);
         }
     }
 
-    async function displayMediaInMessage(type, data) {
-        const message = data.message;
-        if (!settings.enabled || message.is_user || !message.mes) return;
+    // -------------------------------------------------------------------------
+    // 辅助函数和业务逻辑 (这些函数现在是类的方法)
+    // -------------------------------------------------------------------------
 
-        const start = settings.startTrigger;
-        const end = settings.endTrigger;
-        const regex = new RegExp(`${escapeRegex(start)}(.*?)${escapeRegex(end)}`);
+    buildSettingsHtml() {
+        return `
+            <div class="list-group-item">
+                <div class="d-flex w-100 justify-content-between">
+                    <h5 class="mb-1">Web Media Player</h5>
+                </div>
+                <p class="mb-1">Displays media from a web source based on triggers in AI messages. (v3.0.0)</p>
+            </div>
+            <div class="list-group-item"><label for="wmp-enabled">Enable Plugin</label><input type="checkbox" id="wmp-enabled" class="wmp-setting" ${this.settings.enabled ? 'checked' : ''}></div>
+            <div class="list-group-item"><label for="wmp-sourceUrl">Source URL / API Endpoint</label><input type="text" id="wmp-sourceUrl" class="wmp-setting form-control" value="${this.settings.sourceUrl}" placeholder="e.g., https://api.example.com/search?q="><small class="form-text text-muted">The search query will be appended to this URL.</small></div>
+            <div class="list-group-item"><label for="wmp-startTrigger">Start Trigger</label><input type="text" id="wmp-startTrigger" class="wmp-setting form-control" value="${this.settings.startTrigger}"></div>
+            <div class="list-group-item"><label for="wmp-endTrigger">End Trigger</label><input type="text" id="wmp-endTrigger" class="wmp-setting form-control" value="${this.settings.endTrigger}"></div>
+            <div class="list-group-item"><label for="wmp-removeTriggers">Remove triggers after display</label><input type="checkbox" id="wmp-removeTriggers" class="wmp-setting" ${this.settings.removeTriggers ? 'checked' : ''}></div>
+        `;
+    }
+
+    addSettingsEventListeners() {
+        document.querySelectorAll('.wmp-setting').forEach(element => {
+            element.addEventListener('change', async (event) => {
+                const key = event.target.id.replace('wmp-', '');
+                const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+                this.settings[key] = value;
+                await this.context.saveSettings(this.settings);
+            });
+        });
+    }
+
+    async displayMediaInMessage(type, data) {
+        const message = data.message;
+        if (!this.settings.enabled || message.is_user || !message.mes) return;
+
+        const start = this.settings.startTrigger;
+        const end = this.settings.endTrigger;
+        const regex = new RegExp(`${this.escapeRegex(start)}(.*?)${this.escapeRegex(end)}`);
         const match = message.mes.match(regex);
 
         if (match && match[1]) {
@@ -53,7 +92,7 @@
             const messageElement = document.querySelector(`#mes_${message.id} .mes_text`);
             if (!messageElement) return;
 
-            const mediaUrl = await fetchMediaUrl(query);
+            const mediaUrl = await this.fetchMediaUrl(query);
 
             if (mediaUrl) {
                 const container = document.createElement('div');
@@ -74,7 +113,7 @@
                 container.appendChild(mediaElement);
                 messageElement.appendChild(container);
 
-                if (settings.removeTriggers) {
+                if (this.settings.removeTriggers) {
                     const textNodes = Array.from(messageElement.childNodes).filter(node => node.nodeType === Node.TEXT_NODE);
                     textNodes.forEach(node => {
                         if (node.textContent.includes(fullTriggerText)) {
@@ -86,86 +125,27 @@
         }
     }
 
-    function escapeRegex(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-
-    // =================================================================================
-    // 设置面板的构建与事件处理 (这是我们重构的重点)
-    // =================================================================================
-
-    /**
-     * 步骤1: 创建设置面板的HTML字符串
-     */
-    function buildSettingsHtml() {
-        return `
-            <div class="list-group-item">
-                <div class="d-flex w-100 justify-content-between">
-                    <h5 class="mb-1">Web Media Player</h5>
-                </div>
-                <p class="mb-1">Displays media from a web source based on triggers in AI messages. (v${extensionVersion})</p>
-            </div>
-            <div class="list-group-item"><label for="wmp-enabled">Enable Plugin</label><input type="checkbox" id="wmp-enabled" class="wmp-setting" ${settings.enabled ? 'checked' : ''}></div>
-            <div class="list-group-item"><label for="wmp-sourceUrl">Source URL / API Endpoint</label><input type="text" id="wmp-sourceUrl" class="wmp-setting form-control" value="${settings.sourceUrl}" placeholder="e.g., https://api.example.com/search?q="><small class="form-text text-muted">The search query will be appended to this URL.</small></div>
-            <div class="list-group-item"><label for="wmp-startTrigger">Start Trigger</label><input type="text" id="wmp-startTrigger" class="wmp-setting form-control" value="${settings.startTrigger}"></div>
-            <div class="list-group-item"><label for="wmp-endTrigger">End Trigger</label><input type="text" id="wmp-endTrigger" class="wmp-setting form-control" value="${settings.endTrigger}"></div>
-            <div class="list-group-item"><label for="wmp-removeTriggers">Remove triggers after display</label><input type="checkbox" id="wmp-removeTriggers" class="wmp-setting" ${settings.removeTriggers ? 'checked' : ''}></div>
-        `;
-    }
-
-    /**
-     * 步骤2: 为设置面板的元素绑定事件监听器
-     */
-    function addSettingsEventListeners() {
-        document.querySelectorAll('.wmp-setting').forEach(element => {
-            element.addEventListener('change', async (event) => {
-                const key = event.target.id.replace('wmp-', '');
-                const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
-                settings[key] = value;
-                // 使用保存的 context 对象来保存设置
-                if (context) {
-                    await context.saveSettings(settings);
-                }
-            });
-        });
-    }
-
-    // =================================================================================
-    // 插件主入口
-    // =================================================================================
-
-    /**
-     * 插件加载时执行的核心函数
-     */
-    async function onExtensionLoaded(ctx) {
+    async fetchMediaUrl(query) {
+        if (!this.settings.sourceUrl) {
+            console.warn(`[Web Media Player] Source URL is not set.`);
+            return null;
+        }
+        const requestUrl = `${this.settings.sourceUrl}${encodeURIComponent(query)}`;
+        console.log(`[Web Media Player] Fetching media for query "${query}" from: ${requestUrl}`);
         try {
-            // 保存上下文，以便其他函数使用
-            context = ctx;
-
-            // 加载设置
-            settings = { ...defaultSettings, ...(await context.loadSettings()) };
-
-            // 构建并添加设置面板
-            const settingsHtml = buildSettingsHtml();
-            context.addSettings(settingsHtml);
-
-            // 为新添加的元素绑定事件
-            addSettingsEventListeners();
-
-            // 监听SillyTavern的消息渲染事件
-            SillyTavern.events.on('message-rendered', (type, data) => displayMediaInMessage(type, data));
-            
-            console.log(`[${extensionName}] v${extensionVersion} loaded successfully and settings panel created.`);
-
+            return `https://source.unsplash.com/random/800x600?${query}`;
         } catch (error) {
-            console.error(`[${extensionName}] An error occurred during extension loading:`, error);
-            alert(`[${extensionName}] Failed to load. Check F12 console for errors.`);
+            console.error(`[Web Media Player] Error fetching media:`, error);
+            SillyTavern.system.showToast(`[Web Media Player] Error fetching media: ${error.message}`, 'error');
+            return null;
         }
     }
 
-    // 使用 SillyTavern 的标准方式注册插件
-    SillyTavern.extension.register(extensionName, extensionAuthor, {
-        onExtensionLoaded: onExtensionLoaded,
-    });
+    escapeRegex(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+}
 
-})();
+// 【【【 最关键的一步 】】】
+// 将我们定义的类作为默认导出，SillyTavern的加载器会自动处理它。
+export default WebMediaPlayer;
