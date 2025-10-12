@@ -1,16 +1,14 @@
 {
     "name": "Web Media Player",
-    "author": "Web Media Player",
+    "author": "Henry",
     "version": "1.0.0",
     "description": "从网络加载图片/视频并在聊天中展示",
-    "entry": "index.js",
+    "entry": "script.js",
     "requirements": {
         "sillytavern": ">=1.10.0"
     },
     "files": [
-        "index.js",
         "script.js",
-        "settings.js",
         "style.css"
     ]
 }
