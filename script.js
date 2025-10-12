@@ -1,35 +1,38 @@
 (function () {
-    // 定义插件的基本信息
-    const extensionName = 'web-media-player';
-    const extensionAuthor = 'Test Author'; // 使用一个明确的测试作者名
+    // 使用最古老的 var 关键字，确保最大兼容性
+    var extensionName = 'web-media-player';
+    var extensionAuthor = 'Diagnostic Test';
 
-    /**
-     * 插件加载时执行的核心函数
-     * @param {object} context - SillyTavern提供的上下文，包含 loadSettings, saveSettings, addSettings 等API
-     */
-    async function onExtensionLoaded(context) {
-        // 在浏览器控制台（F12）打印一条消息，确认这个函数被执行了
-        console.log('[Web Media Player] Minimal version has been loaded successfully!');
+    // 定义一个最简单的函数
+    function onExtensionLoaded(context) {
+        // 这是最重要的诊断信息！
+        console.log('DIAGNOSTIC SCRIPT: onExtensionLoaded function was CALLED!');
 
-        // 创建一个最简单的HTML片段作为设置面板
-        const minimalSettingsHtml = `
-            <div class="list-group-item">
-                <h5 class="mb-1">Web Media Player (Minimal Test)</h5>
-                <p class="mb-1">
-                    If you can see this message, it means the plugin has been registered correctly.
-                    The registration mechanism is working.
-                </p>
-            </div>
-        `;
+        var diagnosticHtml =
+            '<div class="list-group-item">' +
+            '<h5>Diagnostic Check PASSED</h5>' +
+            '<p>If you see this, the script file was executed and the registration function was called correctly.</p>' +
+            '</div>';
 
-        // 使用官方推荐的 context.addSettings() 方法来添加设置面板
-        context.addSettings(minimalSettingsHtml);
+        context.addSettings(diagnosticHtml);
     }
 
-    // 使用 SillyTavern 的标准方式注册插件
-    // 这是整个插件能被SillyTavern识别的关键
-    SillyTavern.extension.register(extensionName, extensionAuthor, {
-        onExtensionLoaded: onExtensionLoaded,
-    });
+    // 在调用前，先检查 SillyTavern 核心对象是否存在
+    if (window.SillyTavern && window.SillyTavern.extension && window.SillyTavern.extension.register) {
+        console.log('DIAGNOSTIC SCRIPT: SillyTavern.extension.register API found. Attempting to register...');
+        
+        try {
+            SillyTavern.extension.register(extensionName, extensionAuthor, {
+                onExtensionLoaded: onExtensionLoaded
+            });
+        } catch (error) {
+            // 如果注册函数本身抛出错误，打印出来
+            console.error('DIAGNOSTIC SCRIPT: CRITICAL ERROR during register() call!', error);
+        }
+
+    } else {
+        // 如果连核心API都找不到，说明加载时机或环境有问题
+        console.error('DIAGNOSTIC SCRIPT: CRITICAL ERROR! SillyTavern.extension.register API was NOT FOUND when script ran.');
+    }
 
 })();
