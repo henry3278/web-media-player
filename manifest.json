@@ -1,8 +1,7 @@
 {
     "display_name": "本地媒体播放器",
     "author": "你的名字 & AI助手",
-    "version": "8.0.1",
+    "version": "9.0.0",
     "js": "index.js",
-    "css": "style.css",
-    "server_script": "server.js"
+    "css": "style.css"
 }
