@@ -1,11 +1,12 @@
 {
-  "name": "ai-tavern-image-grabber-simple",
-  "version": "3.0.0",
-  "description": "AI云酒馆图片抓取插件 - 简化版",
+  "name": "st-web-media-grabber",
+  "version": "1.0.0",
+  "description": "网页媒体抓取插件",
   "type": "extension",
-  "author": "AI云酒馆",
+  "author": "Media Grabber",
   "entry": "./grabber.js",
-  "config": "./config.js",
+  "adminPanel": "./media-grabber-admin.js",
+  "config": "./config.json",
   "dependencies": [],
   "permissions": ["network"],
   "settings": {
@@ -14,9 +15,9 @@
       "default": true,
       "label": "启用插件"
     },
-    "targetWebsite": {
-      "type": "string",
-      "default": "https://www.kchai.org/",
+    "targetWebsites": {
+      "type": "array", 
+      "default": ["https://www.kchai.org/"],
       "label": "目标网站"
     }
   }
