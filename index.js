@@ -1,7 +1,7 @@
-// 文件名: index.js (本地播放器版 v8.0.0)
+// 文件名: index.js (本地播放器版 v8.0.1)
 (function () {
     const extensionName = 'local-media-player';
-    const extensionVersion = '8.0.0';
+    const extensionVersion = '8.0.1';
 
     // 默认设置
     const defaultSettings = {
