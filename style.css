@@ -1,0 +1,43 @@
+.web-media-container {
+    display: flex;
+    justify-content: center;
+    background-color: #f0f0f0;
+    transition: all 0.3s ease;
+}
+
+.web-media-container img,
+.web-media-container video {
+    display: block;
+    object-fit: contain;
+    width: 100%;
+    height: 100%;
+}
+
+.web-media-container:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.web-media-settings {
+    display: grid;
+    gap: 12px;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+.web-media-settings label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.web-media-settings input[type="text"],
+.web-media-settings textarea {
+    width: 100%;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: rgba(30, 30, 30, 0.8);
+    color: white;
+}
