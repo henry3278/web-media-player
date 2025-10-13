@@ -1,6 +1,3 @@
-好的，我来修复这两个问题：
-
-```javascript
 // index.js - 优化版媒体播放器
 (function() {
     console.log('🎵 优化版媒体播放器加载...');
