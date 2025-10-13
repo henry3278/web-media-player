@@ -1,9 +1,9 @@
-// index.js - 修复控制条拖动版媒体播放器
+// index.js - 移动端优化版媒体播放器
 (function() {
-    console.log('🎵 修复控制条拖动版媒体播放器加载...');
+    console.log('🎵 移动端优化版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.3.1';
+    const PLUGIN_VERSION = '2.4.0';
     
     // 配置
     let config = {
@@ -33,6 +33,14 @@
     let controlsHideTimer = null;
     let isVideoPlaying = false;
     let isDraggingProgress = false;
+    let isMobile = false;
+    
+    // 检测移动端
+    function detectMobile() {
+        isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                  window.innerWidth <= 768;
+        return isMobile;
+    }
     
     // 首先加载CSS
     function loadCSS() {
@@ -53,9 +61,18 @@
                 box-shadow: 0 8px 32px rgba(0,0,0,0.4);
                 cursor: move;
                 border: none;
+                touch-action: none;
+                -webkit-user-select: none;
+                user-select: none;
             }
             
-            #minimal-player:hover {
+            #minimal-player.mobile {
+                cursor: default;
+                max-width: 95vw;
+                max-height: 80vh;
+            }
+            
+            #minimal-player:hover:not(.mobile) {
                 transform: scale(1.02);
             }
             
@@ -65,16 +82,20 @@
                 align-items: center;
                 justify-content: center;
                 overflow: hidden;
+                touch-action: pan-x pan-y;
             }
             
             #player-img, #player-video {
                 max-width: 100%;
-                max-height: 80vh;
+                max-height: 100%;
                 object-fit: contain;
                 display: none;
+                -webkit-touch-callout: none;
+                -webkit-user-select: none;
+                user-select: none;
             }
             
-            /* 视频控制条样式 - 修复拖动功能 */
+            /* 视频控制条样式 */
             #video-controls {
                 position: absolute;
                 bottom: 0;
@@ -94,11 +115,19 @@
                 opacity: 1;
             }
             
+            #video-controls.mobile {
+                padding: 16px;
+            }
+            
             .video-controls-inner {
                 display: flex;
                 align-items: center;
                 gap: 10px;
                 width: 100%;
+            }
+            
+            .video-controls-inner.mobile {
+                gap: 12px;
             }
             
             .video-progress-container {
@@ -109,6 +138,11 @@
                 border-radius: 4px;
                 overflow: hidden;
                 cursor: pointer;
+                touch-action: none;
+            }
+            
+            .video-progress-container.mobile {
+                height: 12px;
             }
             
             #video-buffer {
@@ -150,10 +184,9 @@
                 left: 0;
                 z-index: 3;
                 margin: 0;
-                opacity: 0; /* 隐藏原生滑块，使用自定义样式 */
+                opacity: 0;
             }
             
-            /* 自定义滑块样式 */
             .custom-slider-thumb {
                 position: absolute;
                 top: 50%;
@@ -170,51 +203,14 @@
                 transition: all 0.2s ease;
             }
             
+            .custom-slider-thumb.mobile {
+                width: 20px;
+                height: 20px;
+            }
+            
             .custom-slider-thumb.dragging {
                 transform: translate(-50%, -50%) scale(1.2);
                 background: #f0f0f0;
-            }
-            
-            #video-progress::-webkit-slider-thumb {
-                -webkit-appearance: none;
-                width: 16px;
-                height: 16px;
-                border-radius: 50%;
-                background: #ffffff;
-                cursor: pointer;
-                border: 2px solid #764ba2;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                transition: all 0.2s ease;
-            }
-            
-            #video-progress::-webkit-slider-thumb:hover {
-                transform: scale(1.2);
-                background: #f0f0f0;
-            }
-            
-            #video-progress::-webkit-slider-runnable-track {
-                width: 100%;
-                height: 100%;
-                background: transparent;
-                border-radius: 4px;
-            }
-            
-            #video-progress::-moz-range-thumb {
-                width: 16px;
-                height: 16px;
-                border-radius: 50%;
-                background: #ffffff;
-                cursor: pointer;
-                border: 2px solid #764ba2;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            }
-            
-            #video-progress::-moz-range-track {
-                width: 100%;
-                height: 100%;
-                background: transparent;
-                border-radius: 4px;
-                border: none;
             }
             
             #video-time {
@@ -224,6 +220,45 @@
                 text-align: center;
                 font-family: monospace;
                 font-weight: 500;
+            }
+            
+            #video-time.mobile {
+                font-size: 11px;
+                min-width: 80px;
+            }
+            
+            /* 移动端控制按钮 */
+            #mobile-controls {
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                display: none;
+                gap: 8px;
+                z-index: 11;
+            }
+            
+            #mobile-controls.mobile {
+                display: flex;
+            }
+            
+            .mobile-control-btn {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                background: rgba(0,0,0,0.7);
+                border: none;
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                font-size: 16px;
+                transition: all 0.3s ease;
+            }
+            
+            .mobile-control-btn:active {
+                transform: scale(0.9);
+                background: rgba(0,0,0,0.9);
             }
             
             #media-control-btn {
@@ -243,7 +278,14 @@
                 transition: all 0.3s ease;
             }
             
-            #media-control-btn:hover {
+            #media-control-btn.mobile {
+                cursor: pointer;
+                width: 70px !important;
+                height: 70px !important;
+                font-size: 28px !important;
+            }
+            
+            #media-control-btn:hover:not(.mobile) {
                 transform: scale(1.1);
                 box-shadow: 0 6px 20px rgba(0,0,0,0.3);
             }
@@ -312,15 +354,9 @@
                 display: block;
             }
             
-            /* 移动端适配 */
+            /* 移动端专用样式 */
             @media (max-width: 768px) {
-                #media-control-btn {
-                    width: 60px !important;
-                    height: 60px !important;
-                    font-size: 24px !important;
-                }
-                
-                #minimal-player {
+                #minimal-player:not(.mobile) {
                     max-width: 90vw !important;
                 }
                 
@@ -333,37 +369,35 @@
                     margin-bottom: 2px;
                     border-radius: 4px;
                 }
-                
-                .video-progress-container {
-                    height: 12px;
-                }
-                
-                #video-progress::-webkit-slider-thumb {
-                    width: 20px;
-                    height: 20px;
-                }
-                
-                .custom-slider-thumb {
-                    width: 20px;
-                    height: 20px;
-                }
-                
-                #video-time {
-                    font-size: 11px;
-                    min-width: 80px;
-                }
             }
             
             @media (max-width: 480px) {
-                #media-control-btn {
-                    width: 70px !important;
-                    height: 70px !important;
-                    font-size: 28px !important;
-                }
-                
-                #minimal-player {
+                #minimal-player:not(.mobile) {
                     max-width: 95vw !important;
                 }
+                
+                #video-controls {
+                    padding: 10px;
+                }
+                
+                .video-controls-inner {
+                    gap: 8px;
+                }
+                
+                #video-time {
+                    font-size: 10px;
+                    min-width: 70px;
+                }
+            }
+            
+            /* 防止移动端文本选择 */
+            .no-select {
+                -webkit-touch-callout: none;
+                -webkit-user-select: none;
+                -khtml-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
             }
         `;
         document.head.appendChild(style);
@@ -375,13 +409,11 @@
         if (videoControls && isVideoPlaying) {
             videoControls.classList.add('show');
             
-            // 清除之前的隐藏计时器
             if (controlsHideTimer) {
                 clearTimeout(controlsHideTimer);
                 controlsHideTimer = null;
             }
             
-            // 3秒后自动隐藏控制条
             controlsHideTimer = setTimeout(() => {
                 hideControls();
             }, 3000);
@@ -401,55 +433,68 @@
         // 移除已存在的元素
         const existingPlayer = document.getElementById('minimal-player');
         const existingBtn = document.getElementById('media-control-btn');
+        const existingMobileControls = document.getElementById('mobile-controls');
         if (existingPlayer) existingPlayer.remove();
         if (existingBtn) existingBtn.remove();
+        if (existingMobileControls) existingMobileControls.remove();
+        
+        // 检测移动端
+        detectMobile();
         
         // 获取保存的播放器位置
         const savedPlayerPos = localStorage.getItem('media_player_position');
-        let playerStyle = `width: ${config.playerWidth}px;`;
-        if (savedPlayerPos) {
+        let playerStyle = `width: ${isMobile ? Math.min(config.playerWidth, window.innerWidth - 40) : config.playerWidth}px;`;
+        
+        if (savedPlayerPos && !isMobile) {
             const pos = JSON.parse(savedPlayerPos);
             playerStyle += `left: ${pos.x}px; top: ${pos.y}px; transform: none;`;
         } else {
             playerStyle += 'top: 50%; left: 50%; transform: translate(-50%, -50%);';
         }
         
-        // 创建播放器HTML - 修复进度条结构
+        // 移动端类名
+        const mobileClass = isMobile ? 'mobile' : '';
+        
+        // 创建播放器HTML
         const playerHTML = `
-            <div id="minimal-player" style="${playerStyle}">
-                <div id="player-content">
+            <div id="minimal-player" class="${mobileClass} no-select" style="${playerStyle}">
+                <div id="player-content" class="${mobileClass}">
                     <img id="player-img">
-                    <video id="player-video"></video>
+                    <video id="player-video" playsinline></video>
                 </div>
                 
-                <div id="video-controls">
-                    <div class="video-controls-inner">
-                        <div class="video-progress-container">
+                <!-- 移动端控制按钮 -->
+                <div id="mobile-controls" class="${mobileClass}">
+                    <button class="mobile-control-btn" id="mobile-close" title="关闭">✕</button>
+                    <button class="mobile-control-btn" id="mobile-fullscreen" title="全屏">⛶</button>
+                </div>
+                
+                <div id="video-controls" class="${mobileClass}">
+                    <div class="video-controls-inner ${mobileClass}">
+                        <div class="video-progress-container ${mobileClass}">
                             <div id="video-buffer"></div>
                             <div id="video-played"></div>
                             <input type="range" id="video-progress" min="0" max="100" value="0" step="0.1">
-                            <div class="custom-slider-thumb"></div>
+                            <div class="custom-slider-thumb ${mobileClass}"></div>
                         </div>
-                        <span id="video-time">0:00 / 0:00</span>
+                        <span id="video-time" class="${mobileClass}">0:00 / 0:00</span>
                     </div>
                 </div>
             </div>
         `;
         
-        // 创建控制按钮（移动端适配）
+        // 创建控制按钮
         const buttonPosition = getButtonPosition();
-        const isMobile = window.innerWidth <= 768;
-        const buttonSize = isMobile ? '60px' : '50px';
-        const buttonFontSize = isMobile ? '24px' : '20px';
-        const buttonPositionStyle = isMobile ? getMobileButtonPosition() : buttonPosition;
+        const buttonSize = isMobile ? '70px' : '50px';
+        const buttonFontSize = isMobile ? '28px' : '20px';
         
         const buttonHTML = `
-            <div id="media-control-btn" style="
-                ${buttonPositionStyle}
+            <div id="media-control-btn" class="${mobileClass} no-select" style="
+                ${buttonPosition}
                 width: ${buttonSize};
                 height: ${buttonSize};
                 font-size: ${buttonFontSize};
-            " title="点击切换媒体播放 | 拖动移动位置">
+            " title="点击切换媒体播放 ${isMobile ? '' : '| 拖动移动位置'}">
                 🎵
             </div>
         `;
@@ -458,37 +503,86 @@
         document.body.insertAdjacentHTML('beforeend', buttonHTML);
         bindPlayerEvents();
         bindButtonEvents();
+        bindMobileEvents();
         updateMediaOpacity();
+    }
+    
+    // 绑定移动端事件
+    function bindMobileEvents() {
+        if (!isMobile) return;
+        
+        const mobileClose = document.getElementById('mobile-close');
+        const mobileFullscreen = document.getElementById('mobile-fullscreen');
+        const player = document.getElementById('minimal-player');
+        
+        // 移动端关闭按钮
+        mobileClose.addEventListener('click', function(e) {
+            e.stopPropagation();
+            togglePlayer();
+        });
+        
+        // 移动端全屏按钮
+        mobileFullscreen.addEventListener('click', function(e) {
+            e.stopPropagation();
+            toggleFullscreen();
+        });
+        
+        // 移动端双击切换媒体
+        player.addEventListener('dblclick', function(e) {
+            if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb')) {
+                showControls();
+                nextMedia();
+            }
+        });
+        
+        // 移动端单击显示控制条
+        player.addEventListener('click', function(e) {
+            if (e.target.id !== 'video-progress' && 
+                !e.target.classList.contains('custom-slider-thumb') &&
+                !e.target.classList.contains('mobile-control-btn') &&
+                isVideoPlaying) {
+                showControls();
+            }
+        });
+    }
+    
+    // 切换全屏
+    function toggleFullscreen() {
+        const player = document.getElementById('minimal-player');
+        if (!document.fullscreenElement) {
+            if (player.requestFullscreen) {
+                player.requestFullscreen();
+            } else if (player.webkitRequestFullscreen) {
+                player.webkitRequestFullscreen();
+            } else if (player.msRequestFullscreen) {
+                player.msRequestFullscreen();
+            }
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            }
+        }
     }
     
     // 获取移动端按钮位置
     function getMobileButtonPosition() {
-        const savedPos = localStorage.getItem('media_button_position');
-        if (savedPos) {
-            const pos = JSON.parse(savedPos);
-            const maxX = window.innerWidth - 70;
-            const maxY = window.innerHeight - 70;
-            const x = Math.max(10, Math.min(maxX, pos.x));
-            const y = Math.max(10, Math.min(maxY, pos.y));
-            return `left: ${x}px; top: ${y}px;`;
+        if (isMobile) {
+            const savedPos = localStorage.getItem('media_button_position');
+            if (savedPos) {
+                const pos = JSON.parse(savedPos);
+                const maxX = window.innerWidth - 80;
+                const maxY = window.innerHeight - 80;
+                const x = Math.max(10, Math.min(maxX, pos.x));
+                const y = Math.max(10, Math.min(maxY, pos.y));
+                return `left: ${x}px; top: ${y}px;`;
+            }
+            return 'bottom: 20px; right: 20px;';
         }
-        return 'bottom: 20px; right: 20px;';
-    }
-    
-    // 保存播放器位置
-    function savePlayerPosition() {
-        const player = document.getElementById('minimal-player');
-        if (player && player.style.display !== 'none') {
-            const rect = player.getBoundingClientRect();
-            localStorage.setItem('media_player_position', JSON.stringify({
-                x: rect.left,
-                y: rect.top
-            }));
-        }
-    }
-    
-    // 获取按钮位置
-    function getButtonPosition() {
+        
         const savedPos = localStorage.getItem('media_button_position');
         if (savedPos) {
             const pos = JSON.parse(savedPos);
@@ -503,7 +597,21 @@
         }
     }
     
-    // 绑定播放器事件 - 修复进度条拖动功能
+    // 保存播放器位置（仅桌面端）
+    function savePlayerPosition() {
+        if (isMobile) return;
+        
+        const player = document.getElementById('minimal-player');
+        if (player && player.style.display !== 'none') {
+            const rect = player.getBoundingClientRect();
+            localStorage.setItem('media_player_position', JSON.stringify({
+                x: rect.left,
+                y: rect.top
+            }));
+        }
+    }
+    
+    // 绑定播放器事件
     function bindPlayerEvents() {
         const player = document.getElementById('minimal-player');
         const video = document.getElementById('player-video');
@@ -512,25 +620,27 @@
         const progressContainer = document.querySelector('.video-progress-container');
         const customThumb = document.querySelector('.custom-slider-thumb');
         
-        // 双击切换下一个媒体（显示控制条）
-        player.addEventListener('dblclick', function(e) {
-            if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb')) {
-                showControls();
-                nextMedia();
-            }
-        });
+        // 桌面端事件
+        if (!isMobile) {
+            player.addEventListener('dblclick', function(e) {
+                if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb')) {
+                    showControls();
+                    nextMedia();
+                }
+            });
+            
+            content.addEventListener('click', function(e) {
+                if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
+                    showControls();
+                }
+            });
+            
+            player.addEventListener('mousedown', startPlayerDrag);
+        }
         
-        // 单击视频区域显示控制条
-        content.addEventListener('click', function(e) {
-            if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
-                showControls();
-            }
-        });
-        
-        player.addEventListener('mousedown', startPlayerDrag);
         player.addEventListener('touchstart', startPlayerDrag);
         
-        // 修复进度条拖动功能
+        // 进度条事件
         progress.addEventListener('input', function() {
             if (video.duration) {
                 video.currentTime = (this.value / 100) * video.duration;
@@ -556,6 +666,8 @@
         video.addEventListener('progress', updateVideoBuffer);
         video.addEventListener('loadedmetadata', function() {
             if (config.videoMuted) video.muted = true;
+            video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', '');
             updateVideoProgress();
             updateVideoBuffer();
             adjustPlayerHeight();
@@ -586,6 +698,29 @@
         });
         
         window.addEventListener('beforeunload', savePlayerPosition);
+        
+        // 移动端手势支持
+        if (isMobile) {
+            let startX, startY;
+            player.addEventListener('touchstart', function(e) {
+                const touch = e.touches[0];
+                startX = touch.clientX;
+                startY = touch.clientY;
+            });
+            
+            player.addEventListener('touchmove', function(e) {
+                if (e.touches.length === 1) {
+                    const touch = e.touches[0];
+                    const deltaX = touch.clientX - startX;
+                    const deltaY = touch.clientY - startY;
+                    
+                    // 简单的滑动手势检测
+                    if (Math.abs(deltaX) > 50) {
+                        e.preventDefault();
+                    }
+                }
+            });
+        }
     }
     
     // 开始拖动进度条
@@ -701,9 +836,14 @@
             if (!isDraggingButton) togglePlayer();
         });
         
-        button.addEventListener('mousedown', startButtonDrag);
+        if (!isMobile) {
+            button.addEventListener('mousedown', startButtonDrag);
+        }
+        
         button.addEventListener('touchstart', startButtonDrag);
-        button.addEventListener('touchstart', function(e) { e.preventDefault(); });
+        button.addEventListener('touchstart', function(e) { 
+            if (isMobile) e.preventDefault(); 
+        });
     }
     
     // 开始拖动按钮
@@ -715,7 +855,7 @@
         const button = document.getElementById('media-control-btn');
         const rect = button.getBoundingClientRect();
         
-        if (e.type === 'mousedown') {
+        if (e.type === 'mousedown' && !isMobile) {
             buttonDragOffset.x = e.clientX - rect.left;
             buttonDragOffset.y = e.clientY - rect.top;
             document.addEventListener('mousemove', onButtonDrag);
@@ -726,10 +866,12 @@
             buttonDragOffset.y = touch.clientY - rect.top;
             document.addEventListener('touchmove', onButtonDrag);
             document.addEventListener('touchend', stopButtonDrag);
+            
+            if (isMobile) {
+                button.style.cursor = 'grabbing';
+                button.style.opacity = '0.8';
+            }
         }
-        
-        button.style.cursor = 'grabbing';
-        button.style.opacity = '0.8';
     }
     
     // 按钮拖动中
@@ -739,7 +881,7 @@
         const button = document.getElementById('media-control-btn');
         let clientX, clientY;
         
-        if (e.type === 'mousemove') {
+        if (e.type === 'mousemove' && !isMobile) {
             clientX = e.clientX;
             clientY = e.clientY;
         } else {
@@ -762,8 +904,11 @@
     function stopButtonDrag() {
         isDraggingButton = false;
         const button = document.getElementById('media-control-btn');
-        button.style.cursor = 'move';
-        button.style.opacity = '1';
+        
+        if (!isMobile) {
+            button.style.cursor = 'move';
+            button.style.opacity = '1';
+        }
         
         const rect = button.getBoundingClientRect();
         localStorage.setItem('media_button_position', JSON.stringify({
@@ -787,7 +932,7 @@
         const player = document.getElementById('minimal-player');
         const rect = player.getBoundingClientRect();
         
-        if (e.type === 'mousedown') {
+        if (e.type === 'mousedown' && !isMobile) {
             playerDragOffset.x = e.clientX - rect.left;
             playerDragOffset.y = e.clientY - rect.top;
             document.addEventListener('mousemove', onPlayerDrag);
@@ -800,7 +945,9 @@
             document.addEventListener('touchend', stopPlayerDrag);
         }
         
-        player.style.cursor = 'grabbing';
+        if (!isMobile) {
+            player.style.cursor = 'grabbing';
+        }
     }
     
     // 播放器拖动中
@@ -810,7 +957,7 @@
         const player = document.getElementById('minimal-player');
         let clientX, clientY;
         
-        if (e.type === 'mousemove') {
+        if (e.type === 'mousemove' && !isMobile) {
             clientX = e.clientX;
             clientY = e.clientY;
         } else {
@@ -830,7 +977,11 @@
     function stopPlayerDrag() {
         isDraggingPlayer = false;
         const player = document.getElementById('minimal-player');
-        player.style.cursor = 'move';
+        
+        if (!isMobile) {
+            player.style.cursor = 'move';
+        }
+        
         savePlayerPosition();
         
         document.removeEventListener('mousemove', onPlayerDrag);
@@ -877,8 +1028,8 @@
             
             if (naturalWidth && naturalHeight) {
                 const aspectRatio = naturalHeight / naturalWidth;
-                const calculatedHeight = config.playerWidth * aspectRatio;
-                const maxHeight = window.innerHeight * 0.8;
+                const calculatedHeight = (isMobile ? Math.min(config.playerWidth, window.innerWidth - 40) : config.playerWidth) * aspectRatio;
+                const maxHeight = window.innerHeight * (isMobile ? 0.8 : 0.8);
                 const finalHeight = Math.min(calculatedHeight, maxHeight);
                 
                 player.style.height = finalHeight + 'px';
@@ -923,13 +1074,13 @@
         if (isPlayerVisible) {
             player.style.display = 'block';
             btn.innerHTML = '⏹️';
-            btn.title = '停止播放';
+            btn.title = isMobile ? '停止播放' : '停止播放';
             startPlayback();
             ensurePlayerInViewport();
         } else {
             player.style.display = 'none';
             btn.innerHTML = '🎵';
-            btn.title = '开始播放';
+            btn.title = isMobile ? '开始播放' : '开始播放';
             stopPlayback();
         }
         savePlayerPosition();
@@ -962,8 +1113,7 @@
             controlsHideTimer = null;
         }
     }
-    
-    function loadCurrentMedia() {
+        function loadCurrentMedia() {
         if (config.mediaUrls.length === 0) return;
         const url = config.mediaUrls[currentIndex];
         const isVideo = isVideoUrl(url);
@@ -1033,11 +1183,11 @@
     }
     
     function isVideoUrl(url) {
-        return /\.(mp4|webm|ogg|mov|avi)/i.test(url);
+        return /\.(mp4|webm|ogg|mov|avi|m3u8)/i.test(url);
     }
     
     function isImageUrl(url) {
-        return /\.(jpg|jpeg|png|gif|webp|bmp)/i.test(url);
+        return /\.(jpg|jpeg|png|gif|webp|bmp|svg)/i.test(url);
     }
     
     // URL验证函数
@@ -1078,9 +1228,17 @@
                 video.src = url;
                 video.load();
             } else {
-                fetch(url, { method: 'GET', mode: 'no-cors' })
-                    .then(() => { clearTimeout(timer); urlValidationCache.set(url, true); resolve(true); })
-                    .catch(() => { clearTimeout(timer); urlValidationCache.set(url, false); resolve(false); });
+                fetch(url, { method: 'HEAD', mode: 'no-cors' })
+                    .then(() => { 
+                        clearTimeout(timer); 
+                        urlValidationCache.set(url, true); 
+                        resolve(true); 
+                    })
+                    .catch(() => { 
+                        clearTimeout(timer); 
+                        urlValidationCache.set(url, false); 
+                        resolve(false); 
+                    });
             }
         });
     }
@@ -1095,22 +1253,25 @@
         let validVideos = 0, invalidVideos = 0;
         let validOthers = 0, invalidOthers = 0;
         
+        // 图片URL验证
         for (const url of imageUrls) {
             const isValid = await validateUrl(url);
             if (isValid) validImages++; else invalidImages++;
         }
         
+        // 视频URL验证
         for (const url of videoUrls) {
             const isValid = await validateUrl(url);
             if (isValid) validVideos++; else invalidVideos++;
         }
         
+        // 其他URL验证
         for (const url of otherUrls) {
             const isValid = await validateUrl(url);
             if (isValid) validOthers++; else invalidOthers++;
         }
         
-               return {
+        return {
             images: { valid: validImages, invalid: invalidImages, total: imageUrls.length },
             videos: { valid: validVideos, invalid: invalidVideos, total: videoUrls.length },
             others: { valid: validOthers, invalid: invalidOthers, total: otherUrls.length },
@@ -1173,7 +1334,10 @@
     function loadConfig() {
         try {
             const saved = localStorage.getItem('minimal_media_config');
-            if (saved) Object.assign(config, JSON.parse(saved));
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                Object.assign(config, parsed);
+            }
         } catch (error) {
             console.warn('加载配置失败，使用默认配置');
         }
@@ -1205,14 +1369,15 @@
         const html = `
             <div class="list-group-item" id="media-player-settings">
                 <h5>🎵 媒体播放器 v${PLUGIN_VERSION}</h5>
-                <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功 - 双击播放器切换下一个</p>
-                <p style="color: #666; font-size: 11px;">📝 控制条显示规则：单击/双击视频区域显示，3秒后自动隐藏</p>
-                <p style="color: #666; font-size: 11px;">🎛️ 进度条拖动：点击进度条任意位置或拖动滑块</p>
+                <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功 - ${isMobile ? '移动端' : '桌面端'}模式</p>
+                <p style="color: #666; font-size: 11px;">📱 移动端优化：支持触摸操作、全屏播放、手势控制</p>
+                <p style="color: #666; font-size: 11px;">🎛️ 控制条显示规则：单击/双击显示，3秒后自动隐藏</p>
                 
                 <div class="form-group">
                     <label><input type="checkbox" id="mp-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
                 </div>
                 
+                ${!isMobile ? `
                 <div class="form-group">
                     <label>按钮位置:</label>
                     <select class="form-control" id="mp-button-position">
@@ -1222,6 +1387,7 @@
                         <option value="top-left" ${config.buttonPosition === 'top-left' ? 'selected' : ''}>左上角</option>
                     </select>
                 </div>
+                ` : ''}
                 
                 <div class="form-group">
                     <label>播放器透明度: <span id="opacity-value">${Math.round(config.playerOpacity * 100)}%</span></label>
@@ -1319,8 +1485,10 @@
                 <div class="btn-group mt-3">
                     <button class="btn btn-sm btn-success" id="mp-save">保存设置</button>
                     <button class="btn btn-sm btn-primary" id="mp-test">测试播放</button>
+                    ${!isMobile ? `
                     <button class="btn btn-sm btn-secondary" id="mp-reset-btn">重置按钮位置</button>
                     <button class="btn btn-sm btn-outline-secondary" id="mp-reset-player-pos">重置播放器位置</button>
+                    ` : ''}
                 </div>
                 
                 <div id="mp-status" style="margin-top: 10px; font-size: 12px;"></div>
@@ -1341,14 +1509,16 @@
             showStatus('设置已更新');
         });
         
-        // 按钮位置
-        $('#mp-button-position').on('change', function() {
-            config.buttonPosition = this.value;
-            localStorage.removeItem('media_button_position');
-            createPlayer();
-            saveConfig();
-            showStatus('按钮位置已更新');
-        });
+        // 按钮位置（仅桌面端）
+        if (!isMobile) {
+            $('#mp-button-position').on('change', function() {
+                config.buttonPosition = this.value;
+                localStorage.removeItem('media_button_position');
+                createPlayer();
+                saveConfig();
+                showStatus('按钮位置已更新');
+            });
+        }
         
         // 播放器透明度
         $('#mp-opacity').on('input', function() {
@@ -1398,7 +1568,7 @@
             config.playerWidth = value;
             const player = document.getElementById('minimal-player');
             if (player) {
-                player.style.width = value + 'px';
+                player.style.width = (isMobile ? Math.min(value, window.innerWidth - 40) : value) + 'px';
                 adjustPlayerHeight();
                 ensurePlayerInViewport();
             }
@@ -1413,7 +1583,7 @@
             config.playerWidth = value;
             const player = document.getElementById('minimal-player');
             if (player) {
-                player.style.width = value + 'px';
+                player.style.width = (isMobile ? Math.min(value, window.innerWidth - 40) : value) + 'px';
                 adjustPlayerHeight();
                 ensurePlayerInViewport();
             }
@@ -1590,12 +1760,14 @@
             showStatus(`✅ 已覆盖导入 ${importedCount} 个URL（自动去重）`);
         });
         
-        // 重置播放器位置
-        $('#mp-reset-player-pos').on('click', function() {
-            localStorage.removeItem('media_player_position');
-            createPlayer();
-            showStatus('✅ 播放器位置已重置到中心');
-        });
+        // 重置播放器位置（仅桌面端）
+        if (!isMobile) {
+            $('#mp-reset-player-pos').on('click', function() {
+                localStorage.removeItem('media_player_position');
+                createPlayer();
+                showStatus('✅ 播放器位置已重置到中心');
+            });
+        }
         
         $('#mp-save').on('click', function() {
             saveConfig();
@@ -1607,11 +1779,14 @@
             showStatus('🎵 播放器测试中...');
         });
         
-        $('#mp-reset-btn').on('click', function() {
-            localStorage.removeItem('media_button_position');
-            createPlayer();
-            showStatus('✅ 按钮位置已重置');
-        });
+        // 重置按钮位置（仅桌面端）
+        if (!isMobile) {
+            $('#mp-reset-btn').on('click', function() {
+                localStorage.removeItem('media_button_position');
+                createPlayer();
+                showStatus('✅ 按钮位置已重置');
+            });
+        }
     }
     
     // 更新URL统计信息
@@ -1638,10 +1813,13 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化修复控制条拖动版播放器...');
+        console.log('🔧 初始化移动端优化版播放器...');
         
         // 首先加载CSS
         loadCSS();
+        
+        // 检测移动端
+        detectMobile();
         
         loadConfig();
         createPlayer();
@@ -1649,10 +1827,21 @@
         
         // 窗口大小变化时重新定位
         window.addEventListener('resize', function() {
+            detectMobile();
             createPlayer();
         });
         
-        console.log('✅ 修复控制条拖动版播放器初始化完成');
+        // 全屏变化监听
+        document.addEventListener('fullscreenchange', function() {
+            if (!document.fullscreenElement) {
+                const player = document.getElementById('minimal-player');
+                if (player) {
+                    player.classList.remove('fullscreen');
+                }
+            }
+        });
+        
+        console.log('✅ 移动端优化版播放器初始化完成');
     }
     
     // 启动
