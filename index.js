@@ -1,9 +1,9 @@
-// index.js - 修复移动端点击问题版媒体播放器
+// index.js - 修复手机端双击切换问题
 (function() {
-    console.log('🎵 修复移动端点击问题版媒体播放器加载...');
+    console.log('🎵 修复手机端双击切换问题版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.4.2';
+    const PLUGIN_VERSION = '2.4.3';
     
     // 配置
     let config = {
@@ -34,6 +34,7 @@
     let isVideoPlaying = false;
     let isDraggingProgress = false;
     let lastTapTime = 0;
+    let lastPlayerTapTime = 0;
     
     // 检测设备类型
     function isMobileDevice() {
@@ -610,7 +611,7 @@
         }
     }
     
-    // 绑定播放器事件
+    // 绑定播放器事件 - 修复手机端双击切换问题
     function bindPlayerEvents() {
         const player = document.getElementById('minimal-player');
         const video = document.getElementById('player-video');
@@ -624,27 +625,53 @@
             return;
         }
         
-        // 双击切换下一个媒体
+        // PC端双击切换下一个媒体
         player.addEventListener('dblclick', function(e) {
-            if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb')) {
+            if (!isMobileDevice() && e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb')) {
                 showControls();
                 nextMedia();
             }
         });
         
-        // 单击视频区域显示控制条
-        content.addEventListener('click', function(e) {
-            if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
-                showControls();
-            }
-        });
-        
-        // 移动端触摸事件
-        player.addEventListener('touchstart', function(e) {
-            if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
-                showControls();
-            }
-        });
+        // 手机端双击切换媒体（使用触摸事件）
+        if (isMobileDevice()) {
+            let tapCount = 0;
+            let tapTimer = null;
+            
+            player.addEventListener('touchstart', function(e) {
+                if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
+                    tapCount++;
+                    
+                    if (tapCount === 1) {
+                        // 第一次点击，显示控制条
+                        showControls();
+                        tapTimer = setTimeout(() => {
+                            tapCount = 0;
+                        }, 300);
+                    } else if (tapCount === 2) {
+                        // 第二次点击，切换下一个媒体
+                        clearTimeout(tapTimer);
+                        tapCount = 0;
+                        console.log('📱 手机端双击切换媒体');
+                        nextMedia();
+                    }
+                }
+            });
+            
+            // 单击视频区域显示控制条
+            content.addEventListener('touchstart', function(e) {
+                if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
+                    showControls();
+                }
+            });
+        } else {
+            // PC端单击视频区域显示控制条
+            content.addEventListener('click', function(e) {
+                if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
+                    showControls();
+                }
+            });
+        }
         
         player.addEventListener('mousedown', startPlayerDrag);
         player.addEventListener('touchstart', startPlayerDrag);
@@ -854,7 +881,7 @@
         }
     }
     
-    // 绑定按钮事件 - 修复移动端点击问题
+    // 绑定按钮事件
     function bindButtonEvents() {
         const button = document.getElementById('media-control-btn');
         
@@ -1115,7 +1142,7 @@
         
         if (newX < margin) newX = margin;
         if (newY < margin) newY = margin;
-        if (newX + rect.width > viewportWidth - margin) newX = viewportWidth - rect.width - margin;
+                if (newX + rect.width > viewportWidth - margin) newX = viewportWidth - rect.width - margin;
         if (newY + rect.height > viewportHeight - margin) newY = viewportHeight - rect.height - margin;
         
         player.style.left = newX + 'px';
@@ -1124,7 +1151,7 @@
         savePlayerPosition();
     }
     
-        // 调整播放器高度
+    // 调整播放器高度
     function adjustPlayerHeight() {
         const player = document.getElementById('minimal-player');
         const img = document.getElementById('player-img');
@@ -1180,7 +1207,7 @@
         if (timeDisplay) timeDisplay.style.opacity = config.controlsOpacity;
     }
     
-    // 播放器控制函数 - 修复移动端点击问题
+    // 播放器控制函数
     function togglePlayer() {
         console.log('🔄 togglePlayer called, current state:', isPlayerVisible);
         
@@ -1952,7 +1979,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化修复移动端点击问题版播放器...');
+        console.log('🔧 初始化修复手机端双击切换问题版播放器...');
         
         // 首先加载CSS
         loadCSS();
@@ -1967,7 +1994,7 @@
             createPlayer();
         });
         
-        console.log('✅ 修复移动端点击问题版播放器初始化完成');
+        console.log('✅ 修复手机端双击切换问题版播放器初始化完成');
     }
     
     // 启动
