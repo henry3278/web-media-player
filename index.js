@@ -1,9 +1,9 @@
-// index.js - 优化版媒体播放器
+// index.js - 控制条优化版媒体播放器
 (function() {
-    console.log('🎵 优化版媒体播放器加载...');
+    console.log('🎵 控制条优化版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.2.0';
+    const PLUGIN_VERSION = '2.3.0';
     
     // 配置
     let config = {
@@ -30,6 +30,8 @@
     let isDraggingButton = false;
     let buttonDragOffset = { x: 0, y: 0 };
     let urlValidationCache = new Map();
+    let controlsHideTimer = null;
+    let isVideoPlaying = false;
     
     // 首先加载CSS
     function loadCSS() {
@@ -49,7 +51,6 @@
                 overflow: hidden;
                 box-shadow: 0 8px 32px rgba(0,0,0,0.4);
                 cursor: move;
-                /* 移除边框 */
                 border: none;
             }
             
@@ -72,7 +73,7 @@
                 display: none;
             }
             
-            /* 视频控制条样式 - 优化进度条显示 */
+            /* 视频控制条样式 - 优化显示逻辑 */
             #video-controls {
                 position: absolute;
                 bottom: 0;
@@ -82,7 +83,13 @@
                 display: none;
                 background: rgba(0,0,0,0.8);
                 box-sizing: border-box;
-                transition: background-color 0.3s ease;
+                transition: all 0.3s ease;
+                opacity: 0;
+            }
+            
+            #video-controls.show {
+                display: flex;
+                opacity: 1;
             }
             
             .video-controls-inner {
@@ -329,6 +336,33 @@
         document.head.appendChild(style);
     }
     
+    // 显示控制条
+    function showControls() {
+        const videoControls = document.getElementById('video-controls');
+        if (videoControls && isVideoPlaying) {
+            videoControls.classList.add('show');
+            
+            // 清除之前的隐藏计时器
+            if (controlsHideTimer) {
+                clearTimeout(controlsHideTimer);
+                controlsHideTimer = null;
+            }
+            
+            // 3秒后自动隐藏控制条
+            controlsHideTimer = setTimeout(() => {
+                hideControls();
+            }, 3000);
+        }
+    }
+    
+    // 隐藏控制条
+    function hideControls() {
+        const videoControls = document.getElementById('video-controls');
+        if (videoControls) {
+            videoControls.classList.remove('show');
+        }
+    }
+    
     // 创建播放器
     function createPlayer() {
         // 移除已存在的元素
@@ -347,7 +381,7 @@
             playerStyle += 'top: 50%; left: 50%; transform: translate(-50%, -50%);';
         }
         
-        // 创建播放器HTML - 优化进度条结构
+        // 创建播放器HTML
         const playerHTML = `
             <div id="minimal-player" style="${playerStyle}">
                 <div id="player-content">
@@ -440,21 +474,35 @@
         const player = document.getElementById('minimal-player');
         const video = document.getElementById('player-video');
         const progress = document.getElementById('video-progress');
+        const content = document.getElementById('player-content');
         
+        // 双击切换下一个媒体（显示控制条）
         player.addEventListener('dblclick', function(e) {
-            if (e.target.id !== 'video-progress') nextMedia();
+            if (e.target.id !== 'video-progress') {
+                showControls(); // 双击时显示控制条
+                nextMedia();
+            }
+        });
+        
+        // 单击视频区域显示控制条
+        content.addEventListener('click', function(e) {
+            if (e.target.id !== 'video-progress' && isVideoPlaying) {
+                showControls(); // 单击时显示控制条
+            }
         });
         
         player.addEventListener('mousedown', startPlayerDrag);
         player.addEventListener('touchstart', startPlayerDrag);
         
-        // 视频控制 - 优化进度条事件
+        // 视频控制
         progress.addEventListener('input', function() {
             if (video.duration) {
                 video.currentTime = (this.value / 100) * video.duration;
+                showControls(); // 拖动进度条时显示控制条
             }
         });
         
+        // 视频事件
         video.addEventListener('timeupdate', updateVideoProgress);
         video.addEventListener('progress', updateVideoBuffer);
         video.addEventListener('loadedmetadata', function() {
@@ -465,7 +513,21 @@
             ensurePlayerInViewport();
         });
         
-        video.addEventListener('ended', nextMedia);
+        video.addEventListener('play', function() {
+            isVideoPlaying = true;
+            showControls(); // 开始播放时显示控制条
+        });
+        
+        video.addEventListener('pause', function() {
+            isVideoPlaying = false;
+            hideControls(); // 暂停时隐藏控制条
+        });
+        
+        video.addEventListener('ended', function() {
+            isVideoPlaying = false;
+            hideControls(); // 播放结束时隐藏控制条
+            nextMedia();
+        });
         
         const img = document.getElementById('player-img');
         img.addEventListener('load', function() {
@@ -488,7 +550,7 @@
         }
     }
     
-    // 更新视频播放进度 - 优化进度条显示
+    // 更新视频播放进度
     function updateVideoProgress() {
         const video = document.getElementById('player-video');
         const progress = document.getElementById('video-progress');
@@ -697,7 +759,7 @@
         }
     }
     
-    // 更新媒体透明度 - 优化控制条透明度变化
+    // 更新媒体透明度
     function updateMediaOpacity() {
         const img = document.getElementById('player-img');
         const video = document.getElementById('player-video');
@@ -709,13 +771,10 @@
         if (img) img.style.opacity = config.playerOpacity;
         if (video) video.style.opacity = config.playerOpacity;
         
-        // 优化控制条透明度：使用更明显的颜色对比
         if (videoControls) {
             const baseOpacity = config.controlsOpacity;
-            // 控制条背景使用更高的对比度
             videoControls.style.background = `rgba(0,0,0,${Math.min(baseOpacity + 0.3, 0.95)})`;
             
-            // 进度条颜色根据透明度调整对比度
             const buffer = document.getElementById('video-buffer');
             const played = document.getElementById('video-played');
             if (buffer) buffer.style.background = `rgba(255,255,255,${baseOpacity * 0.4})`;
@@ -764,10 +823,17 @@
         if (video) {
             video.pause();
             video.currentTime = 0;
+            isVideoPlaying = false;
         }
         document.getElementById('player-img').style.display = 'none';
         document.getElementById('player-video').style.display = 'none';
-        document.getElementById('video-controls').style.display = 'none';
+        hideControls(); // 停止播放时隐藏控制条
+        
+        // 清除控制条隐藏计时器
+        if (controlsHideTimer) {
+            clearTimeout(controlsHideTimer);
+            controlsHideTimer = null;
+        }
     }
     
     function loadCurrentMedia() {
@@ -791,6 +857,7 @@
         img.style.display = 'none';
         video.style.display = 'none';
         videoControls.style.display = 'none';
+        isVideoPlaying = false;
         
         if (slideTimer) {
             clearInterval(slideTimer);
@@ -816,6 +883,7 @@
                 nextMedia();
             };
             slideTimer = setInterval(nextMedia, config.slideInterval);
+            hideControls(); // 图片播放时隐藏控制条
         }
         
         updateMediaOpacity();
@@ -828,6 +896,7 @@
             Math.floor(Math.random() * config.mediaUrls.length) : 
             (currentIndex + 1) % config.mediaUrls.length;
         loadCurrentMedia();
+        showControls(); // 切换到新视频时显示控制条
     }
     
     function formatTime(seconds) {
@@ -1010,6 +1079,7 @@
             <div class="list-group-item" id="media-player-settings">
                 <h5>🎵 媒体播放器 v${PLUGIN_VERSION}</h5>
                 <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功 - 双击播放器切换下一个</p>
+                <p style="color: #666; font-size: 11px;">📝 控制条显示规则：单击/双击视频区域显示，3秒后自动隐藏</p>
                 
                 <div class="form-group">
                     <label><input type="checkbox" id="mp-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
@@ -1018,14 +1088,14 @@
                 <div class="form-group">
                     <label>按钮位置:</label>
                     <select class="form-control" id="mp-button-position">
-                                                <option value="bottom-right" ${config.buttonPosition === 'bottom-right' ? 'selected' : ''}>右下角</option>
+                        <option value="bottom-right" ${config.buttonPosition === 'bottom-right' ? 'selected' : ''}>右下角</option>
                         <option value="bottom-left" ${config.buttonPosition === 'bottom-left' ? 'selected' : ''}>左下角</option>
                         <option value="top-right" ${config.buttonPosition === 'top-right' ? 'selected' : ''}>右上角</option>
                         <option value="top-left" ${config.buttonPosition === 'top-left' ? 'selected' : ''}>左上角</option>
                     </select>
                 </div>
                 
-                <div class="form-group">
+                                <div class="form-group">
                     <label>播放器透明度: <span id="opacity-value">${Math.round(config.playerOpacity * 100)}%</span></label>
                     <input type="range" class="form-control-range" id="mp-opacity" min="10" max="100" value="${config.playerOpacity * 100}">
                     <input type="number" class="form-control mt-1" id="mp-opacity-input" min="10" max="100" value="${Math.round(config.playerOpacity * 100)}" style="width: 100px;">
@@ -1172,7 +1242,7 @@
             saveConfig();
         });
         
-        // 控制条透明度 - 优化透明度变化效果
+        // 控制条透明度
         $('#mp-controls-opacity').on('input', function() {
             const value = parseInt(this.value);
             $('#mp-controls-opacity-input').val(value);
@@ -1440,7 +1510,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化优化版播放器...');
+        console.log('🔧 初始化控制条优化版播放器...');
         
         // 首先加载CSS
         loadCSS();
@@ -1454,7 +1524,7 @@
             createPlayer();
         });
         
-        console.log('✅ 优化版播放器初始化完成');
+        console.log('✅ 控制条优化版播放器初始化完成');
     }
     
     // 启动
