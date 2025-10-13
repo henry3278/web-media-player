@@ -1,9 +1,9 @@
-// index.js - 修复版媒体播放器
+// index.js - 优化版媒体播放器
 (function() {
-    console.log('🎵 修复版媒体播放器加载...');
+    console.log('🎵 优化版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.1.0';
+    const PLUGIN_VERSION = '2.2.0';
     
     // 配置
     let config = {
@@ -49,7 +49,8 @@
                 overflow: hidden;
                 box-shadow: 0 8px 32px rgba(0,0,0,0.4);
                 cursor: move;
-                border: 2px solid rgba(255,255,255,0.1);
+                /* 移除边框 */
+                border: none;
             }
             
             #minimal-player:hover {
@@ -71,7 +72,7 @@
                 display: none;
             }
             
-            /* 视频控制条样式 - 修复进度条显示 */
+            /* 视频控制条样式 - 优化进度条显示 */
             #video-controls {
                 position: absolute;
                 bottom: 0;
@@ -81,6 +82,7 @@
                 display: none;
                 background: rgba(0,0,0,0.8);
                 box-sizing: border-box;
+                transition: background-color 0.3s ease;
             }
             
             .video-controls-inner {
@@ -94,7 +96,7 @@
                 position: relative;
                 flex: 1;
                 height: 8px;
-                background: rgba(255,255,255,0.2);
+                background: rgba(255,255,255,0.15);
                 border-radius: 4px;
                 overflow: hidden;
             }
@@ -104,11 +106,12 @@
                 top: 0;
                 left: 0;
                 height: 100%;
-                background: rgba(255,255,255,0.4);
+                background: rgba(255,255,255,0.25);
                 border-radius: 4px;
                 pointer-events: none;
                 z-index: 1;
                 width: 0%;
+                transition: width 0.3s ease;
             }
             
             #video-played {
@@ -116,11 +119,12 @@
                 top: 0;
                 left: 0;
                 height: 100%;
-                background: #6b7280;
+                background: linear-gradient(90deg, #667eea, #764ba2);
                 border-radius: 4px;
                 pointer-events: none;
                 z-index: 2;
                 width: 0%;
+                transition: width 0.1s ease;
             }
             
             #video-progress {
@@ -143,8 +147,14 @@
                 border-radius: 50%;
                 background: #ffffff;
                 cursor: pointer;
-                border: 2px solid #6b7280;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                border: 2px solid #764ba2;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                transition: all 0.2s ease;
+            }
+            
+            #video-progress::-webkit-slider-thumb:hover {
+                transform: scale(1.2);
+                background: #f0f0f0;
             }
             
             #video-progress::-webkit-slider-runnable-track {
@@ -160,8 +170,8 @@
                 border-radius: 50%;
                 background: #ffffff;
                 cursor: pointer;
-                border: 2px solid #6b7280;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                border: 2px solid #764ba2;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
             }
             
             #video-progress::-moz-range-track {
@@ -178,6 +188,7 @@
                 min-width: 90px;
                 text-align: center;
                 font-family: monospace;
+                font-weight: 500;
             }
             
             #media-control-btn {
@@ -194,6 +205,12 @@
                 box-shadow: 0 4px 15px rgba(0,0,0,0.2);
                 user-select: none;
                 touch-action: none;
+                transition: all 0.3s ease;
+            }
+            
+            #media-control-btn:hover {
+                transform: scale(1.1);
+                box-shadow: 0 6px 20px rgba(0,0,0,0.3);
             }
             
             #media-control-btn:active {
@@ -330,7 +347,7 @@
             playerStyle += 'top: 50%; left: 50%; transform: translate(-50%, -50%);';
         }
         
-        // 创建播放器HTML - 修复进度条结构
+        // 创建播放器HTML - 优化进度条结构
         const playerHTML = `
             <div id="minimal-player" style="${playerStyle}">
                 <div id="player-content">
@@ -431,7 +448,7 @@
         player.addEventListener('mousedown', startPlayerDrag);
         player.addEventListener('touchstart', startPlayerDrag);
         
-        // 视频控制 - 修复进度条事件
+        // 视频控制 - 优化进度条事件
         progress.addEventListener('input', function() {
             if (video.duration) {
                 video.currentTime = (this.value / 100) * video.duration;
@@ -471,7 +488,7 @@
         }
     }
     
-    // 更新视频播放进度 - 修复进度条显示
+    // 更新视频播放进度 - 优化进度条显示
     function updateVideoProgress() {
         const video = document.getElementById('player-video');
         const progress = document.getElementById('video-progress');
@@ -680,7 +697,7 @@
         }
     }
     
-    // 更新媒体透明度
+    // 更新媒体透明度 - 优化控制条透明度变化
     function updateMediaOpacity() {
         const img = document.getElementById('player-img');
         const video = document.getElementById('player-video');
@@ -691,7 +708,22 @@
         if (player) player.style.background = `rgba(0, 0, 0, ${config.playerOpacity})`;
         if (img) img.style.opacity = config.playerOpacity;
         if (video) video.style.opacity = config.playerOpacity;
-        if (videoControls) videoControls.style.background = `rgba(0,0,0,${config.controlsOpacity})`;
+        
+        // 优化控制条透明度：使用更明显的颜色对比
+        if (videoControls) {
+            const baseOpacity = config.controlsOpacity;
+            // 控制条背景使用更高的对比度
+            videoControls.style.background = `rgba(0,0,0,${Math.min(baseOpacity + 0.3, 0.95)})`;
+            
+            // 进度条颜色根据透明度调整对比度
+            const buffer = document.getElementById('video-buffer');
+            const played = document.getElementById('video-played');
+            if (buffer) buffer.style.background = `rgba(255,255,255,${baseOpacity * 0.4})`;
+            if (played) played.style.background = `linear-gradient(90deg, 
+                rgba(102, 126, 234, ${baseOpacity}), 
+                rgba(118, 75, 162, ${baseOpacity}))`;
+        }
+        
         if (timeDisplay) timeDisplay.style.opacity = config.controlsOpacity;
     }
     
@@ -768,7 +800,7 @@
         if (isVideo) {
             video.src = url;
             video.style.display = 'block';
-            videoControls.style.display = 'flex'; // 确保控制条显示
+            videoControls.style.display = 'flex';
             if (config.videoMuted) video.muted = true;
             video.play().catch(e => {
                 console.log('视频播放失败:', e);
@@ -924,16 +956,15 @@
         URL.revokeObjectURL(url);
     }
     
-    // 从文本导入URL列表 - 改为输入框导入
+    // 从文本导入URL列表
     function importFromText(text, mode) {
         const newUrls = text.split('\n')
             .filter(url => url.trim())
-            .filter((url, index, self) => self.indexOf(url) === index); // 去重
+            .filter((url, index, self) => self.indexOf(url) === index);
         
         if (mode === 'replace') {
             config.mediaUrls = newUrls;
         } else {
-            // 追加时也要去重
             const combinedUrls = [...new Set([...config.mediaUrls, ...newUrls])];
             config.mediaUrls = combinedUrls;
         }
@@ -987,7 +1018,7 @@
                 <div class="form-group">
                     <label>按钮位置:</label>
                     <select class="form-control" id="mp-button-position">
-                        <option value="bottom-right" ${config.buttonPosition === 'bottom-right' ? 'selected' : ''}>右下角</option>
+                                                <option value="bottom-right" ${config.buttonPosition === 'bottom-right' ? 'selected' : ''}>右下角</option>
                         <option value="bottom-left" ${config.buttonPosition === 'bottom-left' ? 'selected' : ''}>左下角</option>
                         <option value="top-right" ${config.buttonPosition === 'top-right' ? 'selected' : ''}>右上角</option>
                         <option value="top-left" ${config.buttonPosition === 'top-left' ? 'selected' : ''}>左上角</option>
@@ -1039,7 +1070,7 @@
                     </select>
                 </div>
                 
-                                <div class="form-group">
+                <div class="form-group">
                     <label><input type="checkbox" id="mp-muted" ${config.videoMuted ? 'checked' : ''}> 视频静音播放</label>
                 </div>
                 
@@ -1141,7 +1172,7 @@
             saveConfig();
         });
         
-        // 控制条透明度
+        // 控制条透明度 - 优化透明度变化效果
         $('#mp-controls-opacity').on('input', function() {
             const value = parseInt(this.value);
             $('#mp-controls-opacity-input').val(value);
@@ -1409,7 +1440,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化修复版播放器...');
+        console.log('🔧 初始化优化版播放器...');
         
         // 首先加载CSS
         loadCSS();
@@ -1423,7 +1454,7 @@
             createPlayer();
         });
         
-        console.log('✅ 修复版播放器初始化完成');
+        console.log('✅ 优化版播放器初始化完成');
     }
     
     // 启动
