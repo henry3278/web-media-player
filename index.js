@@ -1,11 +1,11 @@
-// index.js - 修复移动端点击问题版媒体播放器
+// index.js - 修复双击切换和视频卡顿问题版媒体播放器
 (function() {
-    console.log('🎵 修复移动端点击问题版媒体播放器加载...');
+    console.log('🎵 修复双击切换和视频卡顿问题版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.4.2';
+    const PLUGIN_VERSION = '2.5.0';
     
-    // 配置
+    // 配置 - URL数据通用，其他设置分开保存
     let config = {
         enabled: true,
         mediaType: 'mixed',
@@ -34,11 +34,22 @@
     let isVideoPlaying = false;
     let isDraggingProgress = false;
     let lastTapTime = 0;
+    let lastTapTarget = null;
     
     // 检测设备类型
     function isMobileDevice() {
         return window.innerWidth <= 768 || 
                /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+    
+    // 获取设备特定的配置键名
+    function getConfigKey(key) {
+        const devicePrefix = isMobileDevice() ? 'mobile_' : 'pc_';
+        // URL数据使用通用键名，其他设置使用设备特定键名
+        if (key === 'mediaUrls') {
+            return 'minimal_media_urls'; // 通用键名
+        }
+        return `minimal_media_${devicePrefix}${key}`;
     }
     
     // 首先加载CSS
@@ -472,7 +483,7 @@
         }
         
         // 获取保存的播放器位置
-        const savedPlayerPos = localStorage.getItem('media_player_position');
+        const savedPlayerPos = localStorage.getItem(getConfigKey('player_position'));
         let playerStyle = `width: ${config.playerWidth}px;`;
         
         if (savedPlayerPos) {
@@ -571,16 +582,18 @@
         }
         
         if (video) {
+            // 视频优化：降低分辨率以提高性能
             video.setAttribute('playsinline', '');
             video.setAttribute('webkit-playsinline', '');
             video.setAttribute('x5-playsinline', '');
             video.setAttribute('x-webkit-airplay', 'allow');
+            video.setAttribute('preload', 'auto');
         }
     }
     
     // 获取按钮位置
     function getButtonPosition(isMobile) {
-        const savedPos = localStorage.getItem('media_button_position');
+        const savedPos = localStorage.getItem(getConfigKey('button_position'));
         if (savedPos) {
             const pos = JSON.parse(savedPos);
             return `left: ${pos.x}px; top: ${pos.y}px;`;
@@ -603,14 +616,14 @@
         const player = document.getElementById('minimal-player');
         if (player && player.style.display !== 'none') {
             const rect = player.getBoundingClientRect();
-            localStorage.setItem('media_player_position', JSON.stringify({
+            localStorage.setItem(getConfigKey('player_position'), JSON.stringify({
                 x: rect.left,
                 y: rect.top
             }));
         }
     }
     
-    // 绑定播放器事件
+    // 绑定播放器事件 - 修复双击切换问题
     function bindPlayerEvents() {
         const player = document.getElementById('minimal-player');
         const video = document.getElementById('player-video');
@@ -624,23 +637,79 @@
             return;
         }
         
-        // 双击切换下一个媒体
+        // 修复双击切换功能
+        let lastClickTime = 0;
+        let clickTimer = null;
+        
+        function handleDoubleClick(e) {
+            const currentTime = new Date().getTime();
+            const timeDiff = currentTime - lastClickTime;
+            
+            if (timeDiff < 300 && timeDiff > 0) {
+                // 双击事件
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🔄 双击切换媒体');
+                showControls();
+                nextMedia();
+                lastClickTime = 0;
+                if (clickTimer) {
+                    clearTimeout(clickTimer);
+                    clickTimer = null;
+                }
+            } else {
+                // 单击事件
+                lastClickTime = currentTime;
+                clickTimer = setTimeout(() => {
+                    // 单击显示控制条
+                    if (e.target.id !== 'video-progress' && 
+                        !e.target.classList.contains('custom-slider-thumb') && 
+                        isVideoPlaying) {
+                        showControls();
+                    }
+                    lastClickTime = 0;
+                }, 300);
+            }
+        }
+        
+        // PC端双击事件
         player.addEventListener('dblclick', function(e) {
             if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb')) {
+                console.log('🔄 PC端双击切换媒体');
                 showControls();
                 nextMedia();
             }
         });
         
-        // 单击视频区域显示控制条
-        content.addEventListener('click', function(e) {
-            if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
+        // 移动端触摸事件 - 修复双击检测
+        let lastTouchTime = 0;
+        player.addEventListener('touchstart', function(e) {
+            const currentTime = new Date().getTime();
+            const timeDiff = currentTime - lastTouchTime;
+            
+            if (timeDiff < 300 && timeDiff > 0) {
+                // 双击事件
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🔄 移动端双击切换媒体');
                 showControls();
+                nextMedia();
+                lastTouchTime = 0;
+            } else {
+                // 单击事件
+                lastTouchTime = currentTime;
+                setTimeout(() => {
+                    if (e.target.id !== 'video-progress' && 
+                        !e.target.classList.contains('custom-slider-thumb') && 
+                        isVideoPlaying) {
+                        showControls();
+                    }
+                }, 300);
             }
         });
         
-        // 移动端触摸事件
-        player.addEventListener('touchstart', function(e) {
+        // 单击事件（PC端）
+        content.addEventListener('click', function(e) {
             if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
                 showControls();
             }
@@ -670,11 +739,16 @@
         progressContainer.addEventListener('mousedown', startProgressDrag);
         progressContainer.addEventListener('touchstart', startProgressDrag);
         
-        // 视频事件
+        // 视频事件 - 优化视频性能
         video.addEventListener('timeupdate', updateVideoProgress);
         video.addEventListener('progress', updateVideoBuffer);
         video.addEventListener('loadedmetadata', function() {
             if (config.videoMuted) video.muted = true;
+            
+            // 视频性能优化
+            video.preload = 'auto';
+            video.playsInline = true;
+            
             updateVideoProgress();
             updateVideoBuffer();
             adjustPlayerHeight();
@@ -685,17 +759,33 @@
         video.addEventListener('play', function() {
             isVideoPlaying = true;
             showControls();
+            console.log('▶️ 视频开始播放');
         });
         
         video.addEventListener('pause', function() {
             isVideoPlaying = false;
             hideControls();
+            console.log('⏸️ 视频暂停');
         });
         
         video.addEventListener('ended', function() {
             isVideoPlaying = false;
             hideControls();
+            console.log('⏹️ 视频播放结束');
             nextMedia();
+        });
+        
+        // 视频卡顿优化
+        video.addEventListener('waiting', function() {
+            console.log('⏳ 视频缓冲中...');
+        });
+        
+        video.addEventListener('canplay', function() {
+            console.log('✅ 视频可以播放');
+        });
+        
+        video.addEventListener('canplaythrough', function() {
+            console.log('✅ 视频可以流畅播放');
         });
         
         const img = document.getElementById('player-img');
@@ -716,8 +806,7 @@
         
         console.log('✅ 播放器事件绑定完成');
     }
-    
-    // 确保按钮在视口内
+        // 确保按钮在视口内
     function ensureButtonInViewport() {
         const button = document.getElementById('media-control-btn');
         if (!button) return;
@@ -741,7 +830,7 @@
         button.style.right = 'auto';
         button.style.bottom = 'auto';
         
-        localStorage.setItem('media_button_position', JSON.stringify({
+        localStorage.setItem(getConfigKey('button_position'), JSON.stringify({
             x: newX,
             y: newY
         }));
@@ -838,7 +927,7 @@
         }
     }
     
-    // 更新视频播放进度
+    // 更新视频播放进度 - 优化性能
     function updateVideoProgress() {
         const video = document.getElementById('player-video');
         const progress = document.getElementById('video-progress');
@@ -854,7 +943,7 @@
         }
     }
     
-    // 绑定按钮事件 - 修复移动端点击问题
+    // 绑定按钮事件
     function bindButtonEvents() {
         const button = document.getElementById('media-control-btn');
         
@@ -1021,7 +1110,7 @@
             button.style.opacity = '1';
             
             const rect = button.getBoundingClientRect();
-            localStorage.setItem('media_button_position', JSON.stringify({
+            localStorage.setItem(getConfigKey('button_position'), JSON.stringify({
                 x: rect.left,
                 y: rect.top
             }));
@@ -1057,8 +1146,7 @@
             document.addEventListener('touchmove', onPlayerDrag);
             document.addEventListener('touchend', stopPlayerDrag);
         }
-        
-        player.style.cursor = 'grabbing';
+                player.style.cursor = 'grabbing';
     }
     
     // 播放器拖动中
@@ -1124,7 +1212,7 @@
         savePlayerPosition();
     }
     
-        // 调整播放器高度
+    // 调整播放器高度
     function adjustPlayerHeight() {
         const player = document.getElementById('minimal-player');
         const img = document.getElementById('player-img');
@@ -1180,7 +1268,7 @@
         if (timeDisplay) timeDisplay.style.opacity = config.controlsOpacity;
     }
     
-    // 播放器控制函数 - 修复移动端点击问题
+    // 播放器控制函数 - 优化视频性能
     function togglePlayer() {
         console.log('🔄 togglePlayer called, current state:', isPlayerVisible);
         
@@ -1285,10 +1373,18 @@
         
         if (isVideo) {
             if (video) {
+                // 视频性能优化
                 video.src = url;
                 video.style.display = 'block';
                 if (videoControls) videoControls.style.display = 'flex';
                 if (config.videoMuted) video.muted = true;
+                
+                // 预加载和性能优化
+                video.preload = 'auto';
+                video.playsInline = true;
+                video.setAttribute('playsinline', '');
+                video.setAttribute('webkit-playsinline', '');
+                
                 video.play().then(() => {
                     console.log('✅ 视频播放成功');
                 }).catch(e => {
@@ -1335,11 +1431,11 @@
     }
     
     function isVideoUrl(url) {
-        return /\.(mp4|webm|ogg|mov|avi)/i.test(url);
+        return /\.(mp4|webm|ogg|mov|avi|m3u8)/i.test(url);
     }
     
     function isImageUrl(url) {
-        return /\.(jpg|jpeg|png|gif|webp|bmp)/i.test(url);
+        return /\.(jpg|jpeg|png|gif|webp|bmp|svg)/i.test(url);
     }
     
     // URL验证函数
@@ -1380,7 +1476,7 @@
                 video.src = url;
                 video.load();
             } else {
-                fetch(url, { method: 'GET', mode: 'no-cors' })
+                fetch(url, { method: 'HEAD', mode: 'no-cors' })
                     .then(() => { clearTimeout(timer); urlValidationCache.set(url, true); resolve(true); })
                     .catch(() => { clearTimeout(timer); urlValidationCache.set(url, false); resolve(false); });
             }
@@ -1471,15 +1567,24 @@
         return newUrls.length;
     }
     
-    // 配置管理
+    // 配置管理 - 支持PC端和移动端分开保存
     function loadConfig() {
         try {
-            const saved = localStorage.getItem('minimal_media_config');
-            if (saved) {
-                Object.assign(config, JSON.parse(saved));
-                console.log('✅ 配置加载成功');
-            } else {
-                console.log('ℹ️ 使用默认配置');
+            // 首先加载通用URL数据
+            const savedUrls = localStorage.getItem(getConfigKey('mediaUrls'));
+            if (savedUrls) {
+                config.mediaUrls = JSON.parse(savedUrls);
+                console.log('✅ 加载通用URL数据:', config.mediaUrls.length, '个URL');
+            }
+            
+            // 然后加载设备特定配置
+            const savedConfig = localStorage.getItem(getConfigKey('config'));
+            if (savedConfig) {
+                const deviceConfig = JSON.parse(savedConfig);
+                // 合并配置，但不覆盖URL数据
+                const { mediaUrls, ...otherConfig } = deviceConfig;
+                Object.assign(config, otherConfig);
+                console.log('✅ 加载设备特定配置');
             }
         } catch (error) {
             console.warn('❌ 加载配置失败，使用默认配置');
@@ -1488,7 +1593,13 @@
     
     function saveConfig() {
         try {
-            localStorage.setItem('minimal_media_config', JSON.stringify(config));
+            // 保存通用URL数据
+            localStorage.setItem(getConfigKey('mediaUrls'), JSON.stringify(config.mediaUrls));
+            
+            // 保存设备特定配置（排除URL数据）
+            const { mediaUrls, ...deviceConfig } = config;
+            localStorage.setItem(getConfigKey('config'), JSON.stringify(deviceConfig));
+            
             console.log('✅ 配置保存成功');
         } catch (error) {
             console.error('❌ 保存配置失败');
@@ -1518,6 +1629,7 @@
                 <p style="color: #666; font-size: 11px;">📝 控制条显示规则：单击/双击视频区域显示，3秒后自动隐藏</p>
                 <p style="color: #666; font-size: 11px;">🎛️ 进度条拖动：点击进度条任意位置或拖动滑块</p>
                 <p style="color: #007bff; font-size: 11px;">📱 移动端优化：按钮50px，播放器自适应屏幕</p>
+                <p style="color: #ff6b6b; font-size: 11px;">🔄 URL数据：PC端和移动端通用</p>
                 
                 <div class="form-group">
                     <label><input type="checkbox" id="mp-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
@@ -1584,7 +1696,7 @@
                 
                 <!-- URL管理区域 -->
                 <div class="form-group">
-                    <label>媒体URL管理</label>
+                    <label>媒体URL管理 (PC/移动端通用)</label>
                     <div class="url-stats" id="url-stats">
                         <div>总计: ${config.mediaUrls.length}个URL</div>
                         <div>图片: ${imageUrls.length}个 | 视频: ${videoUrls.length}个 | 其他: ${otherUrls.length}个</div>
@@ -1658,7 +1770,7 @@
         // 按钮位置
         $('#mp-button-position').on('change', function() {
             config.buttonPosition = this.value;
-            localStorage.removeItem('media_button_position');
+            localStorage.removeItem(getConfigKey('button_position'));
             createPlayer();
             saveConfig();
             showStatus('按钮位置已更新');
@@ -1906,7 +2018,7 @@
         
         // 重置播放器位置
         $('#mp-reset-player-pos').on('click', function() {
-            localStorage.removeItem('media_player_position');
+            localStorage.removeItem(getConfigKey('player_position'));
             createPlayer();
             showStatus('✅ 播放器位置已重置到中心');
         });
@@ -1922,7 +2034,7 @@
         });
         
         $('#mp-reset-btn').on('click', function() {
-            localStorage.removeItem('media_button_position');
+            localStorage.removeItem(getConfigKey('button_position'));
             createPlayer();
             showStatus('✅ 按钮位置已重置');
         });
@@ -1941,7 +2053,7 @@
         `);
     }
     
-    function showStatus(message, type = 'success') {
+        function showStatus(message, type = 'success') {
         const statusEl = document.getElementById('mp-status');
         if (statusEl) {
             statusEl.textContent = message;
@@ -1952,7 +2064,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化修复移动端点击问题版播放器...');
+        console.log('🔧 初始化修复双击切换和视频卡顿问题版播放器...');
         
         // 首先加载CSS
         loadCSS();
@@ -1967,7 +2079,7 @@
             createPlayer();
         });
         
-        console.log('✅ 修复移动端点击问题版播放器初始化完成');
+        console.log('✅ 修复双击切换和视频卡顿问题版播放器初始化完成');
     }
     
     // 启动
