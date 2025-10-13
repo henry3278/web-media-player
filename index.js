@@ -1,9 +1,9 @@
-// index.js - 修复移动端问题版媒体播放器
+// index.js - 修复移动端点击问题版媒体播放器
 (function() {
-    console.log('🎵 修复移动端问题版媒体播放器加载...');
+    console.log('🎵 修复移动端点击问题版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.4.1';
+    const PLUGIN_VERSION = '2.4.2';
     
     // 配置
     let config = {
@@ -33,8 +33,9 @@
     let controlsHideTimer = null;
     let isVideoPlaying = false;
     let isDraggingProgress = false;
+    let lastTapTime = 0;
     
-    // 检测设备类型 - 修复检测逻辑
+    // 检测设备类型
     function isMobileDevice() {
         return window.innerWidth <= 768 || 
                /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -244,7 +245,7 @@
                 justify-content: center;
                 box-shadow: 0 4px 15px rgba(0,0,0,0.2);
                 user-select: none;
-                touch-action: none;
+                touch-action: manipulation;
                 transition: all 0.3s ease;
             }
             
@@ -317,7 +318,7 @@
                 display: block;
             }
             
-            /* 移动端专属优化 - 修复按钮大小 */
+            /* 移动端专属优化 */
             .mobile-optimized #minimal-player {
                 max-width: 95vw !important;
                 max-height: 80vh !important;
@@ -450,7 +451,7 @@
         }
     }
     
-    // 创建播放器 - 修复移动端显示问题
+    // 创建播放器
     function createPlayer() {
         console.log('🔄 创建播放器...', '移动端:', isMobileDevice());
         
@@ -509,10 +510,10 @@
             </div>
         `;
         
-        // 创建控制按钮 - 修复移动端按钮大小
+        // 创建控制按钮
         const buttonPosition = getButtonPosition(isMobile);
-        const buttonSize = isMobile ? '50px' : '50px'; // 统一使用50px
-        const buttonFontSize = isMobile ? '20px' : '20px';
+        const buttonSize = '50px';
+        const buttonFontSize = '20px';
         
         const buttonHTML = `
             <div id="media-control-btn" style="
@@ -544,7 +545,8 @@
             const btn = document.getElementById('media-control-btn');
             if (btn) {
                 btn.style.display = 'flex';
-                console.log('✅ 按钮显示状态:', btn.style.display);
+                btn.style.visibility = 'visible';
+                console.log('✅ 按钮显示状态确认');
             }
         }, 100);
     }
@@ -561,8 +563,7 @@
         }
         
         if (button) {
-            button.style.touchAction = 'none';
-            // 确保按钮可见
+            button.style.touchAction = 'manipulation';
             button.style.display = 'flex';
             button.style.visibility = 'visible';
             button.style.opacity = '1';
@@ -586,7 +587,6 @@
         }
         
         if (isMobile) {
-            // 移动端默认位置：右下角
             return 'bottom: 20px; right: 20px;';
         }
         
@@ -854,7 +854,7 @@
         }
     }
     
-    // 绑定按钮事件 - 修复点击无响应问题
+    // 绑定按钮事件 - 修复移动端点击问题
     function bindButtonEvents() {
         const button = document.getElementById('media-control-btn');
         
@@ -865,34 +865,88 @@
         
         console.log('🔗 绑定按钮事件...');
         
-        // 移除所有现有事件监听器
-        button.replaceWith(button.cloneNode(true));
-        const newButton = document.getElementById('media-control-btn');
+        // 清除所有现有事件监听器
+        const newButton = button.cloneNode(true);
+        button.parentNode.replaceChild(newButton, button);
         
-        newButton.addEventListener('click', function(e) {
-            console.log('🎯 按钮被点击');
-            e.preventDefault();
-            e.stopPropagation();
+        // 重新绑定事件
+        const currentButton = document.getElementById('media-control-btn');
+        
+        // 移动端触摸事件处理
+        if (isMobileDevice()) {
+            console.log('📱 绑定移动端触摸事件');
             
-            if (!isDraggingButton) {
-                console.log('🔄 切换播放器状态');
-                togglePlayer();
-            } else {
-                console.log('🚫 忽略拖动中的点击');
-            }
-        });
+            currentButton.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('👆 触摸开始');
+                
+                // 防止双击误触
+                const currentTime = new Date().getTime();
+                const tapLength = currentTime - lastTapTime;
+                if (tapLength < 500 && tapLength > 0) {
+                    console.log('🚫 防止双击误触');
+                    return;
+                }
+                lastTapTime = currentTime;
+                
+                // 标记为点击而非拖动
+                isDraggingButton = false;
+            });
+            
+            currentButton.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('👆 触摸结束');
+                
+                if (!isDraggingButton) {
+                    console.log('🎯 执行点击操作');
+                    togglePlayer();
+                } else {
+                    console.log('🚫 忽略拖动操作');
+                }
+                
+                isDraggingButton = false;
+            });
+            
+            currentButton.addEventListener('touchmove', function(e) {
+                if (isDraggingButton) return;
+                
+                // 检测是否有明显的移动，如果有则认为是拖动
+                const touch = e.touches[0];
+                const rect = currentButton.getBoundingClientRect();
+                const touchX = touch.clientX;
+                const touchY = touch.clientY;
+                
+                // 如果移动距离超过5px，认为是拖动
+                if (Math.abs(touchX - rect.left - rect.width/2) > 5 || 
+                    Math.abs(touchY - rect.top - rect.height/2) > 5) {
+                    isDraggingButton = true;
+                    console.log('🔄 检测到拖动，开始拖动操作');
+                    startButtonDrag(e);
+                }
+            });
+            
+        } else {
+            // PC端事件
+            console.log('💻 绑定PC端点击事件');
+            
+            currentButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🖱️ 按钮被点击');
+                
+                if (!isDraggingButton) {
+                    console.log('🎯 执行点击操作');
+                    togglePlayer();
+                } else {
+                    console.log('🚫 忽略拖动中的点击');
+                }
+            });
+        }
         
-        newButton.addEventListener('mousedown', startButtonDrag);
-        newButton.addEventListener('touchstart', startButtonDrag);
-        
-        // 移动端触摸优化
-        newButton.addEventListener('touchstart', function(e) {
-            e.preventDefault();
-        });
-        
-        newButton.addEventListener('touchend', function(e) {
-            e.preventDefault();
-        });
+        // 拖动事件（PC和移动端共用）
+        currentButton.addEventListener('mousedown', startButtonDrag);
         
         console.log('✅ 按钮事件绑定完成');
     }
@@ -906,17 +960,26 @@
         const button = document.getElementById('media-control-btn');
         const rect = button.getBoundingClientRect();
         
-        if (e.type === 'mousedown') {
-            buttonDragOffset.x = e.clientX - rect.left;
-            buttonDragOffset.y = e.clientY - rect.top;
-            document.addEventListener('mousemove', onButtonDrag);
-            document.addEventListener('mouseup', stopButtonDrag);
-        } else {
-            const touch = e.touches[0];
-            buttonDragOffset.x = touch.clientX - rect.left;
-            buttonDragOffset.y = touch.clientY - rect.top;
-            document.addEventListener('touchmove', onButtonDrag);
-            document.addEventListener('touchend', stopButtonDrag);
+        console.log('🔄 开始拖动按钮');
+        
+        if (e.type === 'mousedown' || e.type === 'touchmove') {
+            let clientX, clientY;
+            
+            if (e.type === 'mousedown') {
+                clientX = e.clientX;
+                clientY = e.clientY;
+                document.addEventListener('mousemove', onButtonDrag);
+                document.addEventListener('mouseup', stopButtonDrag);
+            } else {
+                const touch = e.touches[0];
+                clientX = touch.clientX;
+                clientY = touch.clientY;
+                document.addEventListener('touchmove', onButtonDrag);
+                document.addEventListener('touchend', stopButtonDrag);
+            }
+            
+            buttonDragOffset.x = clientX - rect.left;
+            buttonDragOffset.y = clientY - rect.top;
         }
         
         button.style.cursor = 'grabbing';
@@ -968,6 +1031,8 @@
         document.removeEventListener('mouseup', stopButtonDrag);
         document.removeEventListener('touchmove', onButtonDrag);
         document.removeEventListener('touchend', stopButtonDrag);
+        
+        console.log('🛑 停止拖动按钮');
     }
     
     // 开始拖动播放器
@@ -1059,7 +1124,7 @@
         savePlayerPosition();
     }
     
-    // 调整播放器高度
+        // 调整播放器高度
     function adjustPlayerHeight() {
         const player = document.getElementById('minimal-player');
         const img = document.getElementById('player-img');
@@ -1114,7 +1179,8 @@
         
         if (timeDisplay) timeDisplay.style.opacity = config.controlsOpacity;
     }
-        // 播放器控制函数 - 修复点击无响应问题
+    
+    // 播放器控制函数 - 修复移动端点击问题
     function togglePlayer() {
         console.log('🔄 togglePlayer called, current state:', isPlayerVisible);
         
@@ -1134,6 +1200,12 @@
             btn.title = '停止播放';
             startPlayback();
             ensurePlayerInViewport();
+            
+            // 移动端特殊处理：确保播放器可见
+            if (isMobileDevice()) {
+                player.style.zIndex = '10000';
+                player.style.visibility = 'visible';
+            }
         } else {
             console.log('⏸️ 隐藏播放器');
             player.style.display = 'none';
@@ -1880,7 +1952,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化修复移动端问题版播放器...');
+        console.log('🔧 初始化修复移动端点击问题版播放器...');
         
         // 首先加载CSS
         loadCSS();
@@ -1895,7 +1967,7 @@
             createPlayer();
         });
         
-        console.log('✅ 修复移动端问题版播放器初始化完成');
+        console.log('✅ 修复移动端点击问题版播放器初始化完成');
     }
     
     // 启动
