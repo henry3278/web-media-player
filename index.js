@@ -1,9 +1,9 @@
-// index.js - 最终修复版媒体播放器
+// index.js - 修复版媒体播放器
 (function() {
-    console.log('🎵 最终修复版媒体播放器加载...');
+    console.log('🎵 修复版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.0.0';
+    const PLUGIN_VERSION = '2.1.0';
     
     // 配置
     let config = {
@@ -56,14 +56,71 @@
                 transform: scale(1.02);
             }
             
+            #player-content {
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+            }
+            
+            #player-img, #player-video {
+                max-width: 100%;
+                max-height: 80vh;
+                object-fit: contain;
+                display: none;
+            }
+            
+            /* 视频控制条样式 - 修复进度条显示 */
+            #video-controls {
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+                padding: 12px;
+                display: none;
+                background: rgba(0,0,0,0.8);
+                box-sizing: border-box;
+            }
+            
+            .video-controls-inner {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                width: 100%;
+            }
+            
             .video-progress-container {
                 position: relative;
                 flex: 1;
                 height: 8px;
-                background: rgba(255,255,255,0.1);
+                background: rgba(255,255,255,0.2);
                 border-radius: 4px;
-                margin-right: 8px;
                 overflow: hidden;
+            }
+            
+            #video-buffer {
+                position: absolute;
+                top: 0;
+                left: 0;
+                height: 100%;
+                background: rgba(255,255,255,0.4);
+                border-radius: 4px;
+                pointer-events: none;
+                z-index: 1;
+                width: 0%;
+            }
+            
+            #video-played {
+                position: absolute;
+                top: 0;
+                left: 0;
+                height: 100%;
+                background: #6b7280;
+                border-radius: 4px;
+                pointer-events: none;
+                z-index: 2;
+                width: 0%;
             }
             
             #video-progress {
@@ -74,9 +131,7 @@
                 border-radius: 4px;
                 outline: none;
                 cursor: pointer;
-                position: absolute;
-                top: 0;
-                left: 0;
+                position: relative;
                 z-index: 3;
                 margin: 0;
             }
@@ -115,6 +170,14 @@
                 background: transparent;
                 border-radius: 4px;
                 border: none;
+            }
+            
+            #video-time {
+                color: rgba(255,255,255,0.9);
+                font-size: 12px;
+                min-width: 90px;
+                text-align: center;
+                font-family: monospace;
             }
             
             #media-control-btn {
@@ -191,16 +254,10 @@
             
             .url-tab-content {
                 display: none;
-                animation: fadeIn 0.3s ease;
             }
             
             .url-tab-content.active {
                 display: block;
-            }
-            
-            @keyframes fadeIn {
-                from { opacity: 0; }
-                to { opacity: 1; }
             }
             
             /* 移动端适配 */
@@ -233,6 +290,11 @@
                     width: 20px;
                     height: 20px;
                 }
+                
+                #video-time {
+                    font-size: 11px;
+                    min-width: 80px;
+                }
             }
             
             @media (max-width: 480px) {
@@ -245,26 +307,6 @@
                 #minimal-player {
                     max-width: 95vw !important;
                 }
-            }
-            
-            /* 文件上传样式 */
-            .file-upload-area {
-                border: 2px dashed #dee2e6;
-                border-radius: 4px;
-                padding: 20px;
-                text-align: center;
-                margin: 10px 0;
-                transition: border-color 0.3s ease;
-                cursor: pointer;
-            }
-            
-            .file-upload-area:hover {
-                border-color: #007bff;
-            }
-            
-            .file-upload-area.dragover {
-                border-color: #007bff;
-                background-color: #f8f9fa;
             }
         `;
         document.head.appendChild(style);
@@ -288,7 +330,7 @@
             playerStyle += 'top: 50%; left: 50%; transform: translate(-50%, -50%);';
         }
         
-        // 创建播放器HTML
+        // 创建播放器HTML - 修复进度条结构
         const playerHTML = `
             <div id="minimal-player" style="${playerStyle}">
                 <div id="player-content">
@@ -389,6 +431,7 @@
         player.addEventListener('mousedown', startPlayerDrag);
         player.addEventListener('touchstart', startPlayerDrag);
         
+        // 视频控制 - 修复进度条事件
         progress.addEventListener('input', function() {
             if (video.duration) {
                 video.currentTime = (this.value / 100) * video.duration;
@@ -428,7 +471,7 @@
         }
     }
     
-    // 更新视频播放进度
+    // 更新视频播放进度 - 修复进度条显示
     function updateVideoProgress() {
         const video = document.getElementById('player-video');
         const progress = document.getElementById('video-progress');
@@ -648,7 +691,7 @@
         if (player) player.style.background = `rgba(0, 0, 0, ${config.playerOpacity})`;
         if (img) img.style.opacity = config.playerOpacity;
         if (video) video.style.opacity = config.playerOpacity;
-        if (videoControls) videoControls.style.opacity = config.controlsOpacity;
+        if (videoControls) videoControls.style.background = `rgba(0,0,0,${config.controlsOpacity})`;
         if (timeDisplay) timeDisplay.style.opacity = config.controlsOpacity;
     }
     
@@ -725,7 +768,7 @@
         if (isVideo) {
             video.src = url;
             video.style.display = 'block';
-            videoControls.style.display = 'flex';
+            videoControls.style.display = 'flex'; // 确保控制条显示
             if (config.videoMuted) video.muted = true;
             video.play().catch(e => {
                 console.log('视频播放失败:', e);
@@ -881,30 +924,22 @@
         URL.revokeObjectURL(url);
     }
     
-    // 从文件导入URL列表
-    function importFromFile(file, mode) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const text = e.target.result;
-                    const newUrls = text.split('\n').filter(url => url.trim());
-                    
-                    if (mode === 'replace') {
-                        config.mediaUrls = [...new Set(newUrls)];
-                    } else {
-                        config.mediaUrls = [...new Set([...config.mediaUrls, ...newUrls])];
-                    }
-                    
-                    saveConfig();
-                    resolve(newUrls.length);
-                } catch (error) {
-                    reject(error);
-                }
-            };
-            reader.onerror = reject;
-            reader.readAsText(file);
-        });
+    // 从文本导入URL列表 - 改为输入框导入
+    function importFromText(text, mode) {
+        const newUrls = text.split('\n')
+            .filter(url => url.trim())
+            .filter((url, index, self) => self.indexOf(url) === index); // 去重
+        
+        if (mode === 'replace') {
+            config.mediaUrls = newUrls;
+        } else {
+            // 追加时也要去重
+            const combinedUrls = [...new Set([...config.mediaUrls, ...newUrls])];
+            config.mediaUrls = combinedUrls;
+        }
+        
+        saveConfig();
+        return newUrls.length;
     }
     
     // 配置管理
@@ -1004,7 +1039,7 @@
                     </select>
                 </div>
                 
-                <div class="form-group">
+                                <div class="form-group">
                     <label><input type="checkbox" id="mp-muted" ${config.videoMuted ? 'checked' : ''}> 视频静音播放</label>
                 </div>
                 
@@ -1023,7 +1058,7 @@
                         <div class="url-tab" data-tab="videos">视频</div>
                     </div>
                     
-                                        <div class="url-tab-content active" id="tab-all">
+                    <div class="url-tab-content active" id="tab-all">
                         <textarea class="form-control" id="mp-urls" rows="5" placeholder="每行一个URL" style="font-size: 12px;">${config.mediaUrls.join('\n')}</textarea>
                     </div>
                     
@@ -1041,15 +1076,10 @@
                         <button class="btn btn-sm btn-success" id="mp-export-urls">导出URL</button>
                     </div>
                     
+                    <!-- 改为输入框导入 -->
                     <div class="mt-2">
-                        <label>从文件导入URL:</label>
-                        <div class="file-upload-area" id="file-upload-area">
-                            <input type="file" id="mp-import-file" accept=".txt" style="display: none;">
-                            <div style="cursor: pointer;">
-                                <p>📁 点击选择文件或拖拽文件到这里</p>
-                                <small class="text-muted">支持.txt格式，每行一个URL</small>
-                            </div>
-                        </div>
+                        <label>批量导入URL:</label>
+                        <textarea class="form-control" id="mp-import-text" rows="3" placeholder="粘贴URL列表，每行一个URL，自动去重" style="font-size: 12px;"></textarea>
                         <div class="btn-group mt-1 w-100">
                             <button class="btn btn-sm btn-primary" id="mp-import-append">追加导入</button>
                             <button class="btn btn-sm btn-danger" id="mp-import-replace">覆盖导入</button>
@@ -1280,91 +1310,34 @@
             showStatus('✅ URL列表已导出');
         });
         
-        // 文件上传区域点击事件
-        $('#file-upload-area').on('click', function() {
-            $('#mp-import-file').click();
-        });
-        
-        // 拖拽文件支持
-        $('#file-upload-area').on('dragover', function(e) {
-            e.preventDefault();
-            $(this).addClass('dragover');
-        });
-        
-        $('#file-upload-area').on('dragleave', function(e) {
-            e.preventDefault();
-            $(this).removeClass('dragover');
-        });
-        
-        $('#file-upload-area').on('drop', function(e) {
-            e.preventDefault();
-            $(this).removeClass('dragover');
-            const files = e.originalEvent.dataTransfer.files;
-            if (files.length > 0) {
-                $('#mp-import-file').prop('files', files);
-                showStatus(`📁 已选择文件: ${files[0].name}`);
-            }
-        });
-        
-        // 文件选择变化
-        $('#mp-import-file').on('change', function() {
-            const file = this.files[0];
-            if (file) {
-                showStatus(`📁 已选择文件: ${file.name}`);
-            }
-        });
-        
-        // 文件导入URL
-        $('#mp-import-append').on('click', async function() {
-            const fileInput = document.getElementById('mp-import-file');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                showStatus('请先选择要导入的文件', 'error');
+        // 输入框导入URL
+        $('#mp-import-append').on('click', function() {
+            const importText = $('#mp-import-text').val().trim();
+            if (!importText) {
+                showStatus('请输入要导入的URL', 'error');
                 return;
             }
             
-            if (file.type !== 'text/plain' && !file.name.endsWith('.txt')) {
-                showStatus('请选择.txt格式的文件', 'error');
-                return;
-            }
+            const importedCount = importFromText(importText, 'append');
             
-            const button = $(this);
-            button.prop('disabled', true).text('导入中...');
+            // 更新所有URL文本框
+            $('#mp-urls').val(config.mediaUrls.join('\n'));
             
-            try {
-                const importedCount = await importFromFile(file, 'append');
-                
-                // 更新所有URL文本框
-                $('#mp-urls').val(config.mediaUrls.join('\n'));
-                
-                // 更新分类URL文本框
-                const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
-                const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
-                $('#mp-urls-images').val(imageUrls.join('\n'));
-                $('#mp-urls-videos').val(videoUrls.join('\n'));
-                
-                updateUrlStats();
-                fileInput.value = '';
-                showStatus(`✅ 已追加导入 ${importedCount} 个URL`);
-            } catch (error) {
-                showStatus('❌ 导入失败: ' + error.message, 'error');
-            } finally {
-                button.prop('disabled', false).text('追加导入');
-            }
+            // 更新分类URL文本框
+            const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+            const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+            $('#mp-urls-images').val(imageUrls.join('\n'));
+            $('#mp-urls-videos').val(videoUrls.join('\n'));
+            
+            updateUrlStats();
+            $('#mp-import-text').val(''); // 清空输入框
+            showStatus(`✅ 已追加导入 ${importedCount} 个URL（自动去重）`);
         });
         
-        $('#mp-import-replace').on('click', async function() {
-            const fileInput = document.getElementById('mp-import-file');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                showStatus('请先选择要导入的文件', 'error');
-                return;
-            }
-            
-            if (file.type !== 'text/plain' && !file.name.endsWith('.txt')) {
-                showStatus('请选择.txt格式的文件', 'error');
+        $('#mp-import-replace').on('click', function() {
+            const importText = $('#mp-import-text').val().trim();
+            if (!importText) {
+                showStatus('请输入要导入的URL', 'error');
                 return;
             }
             
@@ -1372,29 +1345,20 @@
                 return;
             }
             
-            const button = $(this);
-            button.prop('disabled', true).text('导入中...');
+            const importedCount = importFromText(importText, 'replace');
             
-            try {
-                const importedCount = await importFromFile(file, 'replace');
-                
-                // 更新所有URL文本框
-                $('#mp-urls').val(config.mediaUrls.join('\n'));
-                
-                // 更新分类URL文本框
-                const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
-                const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
-                $('#mp-urls-images').val(imageUrls.join('\n'));
-                $('#mp-urls-videos').val(videoUrls.join('\n'));
-                
-                updateUrlStats();
-                fileInput.value = '';
-                showStatus(`✅ 已覆盖导入 ${importedCount} 个URL`);
-            } catch (error) {
-                showStatus('❌ 导入失败: ' + error.message, 'error');
-            } finally {
-                button.prop('disabled', false).text('覆盖导入');
-            }
+            // 更新所有URL文本框
+            $('#mp-urls').val(config.mediaUrls.join('\n'));
+            
+            // 更新分类URL文本框
+            const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+            const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+            $('#mp-urls-images').val(imageUrls.join('\n'));
+            $('#mp-urls-videos').val(videoUrls.join('\n'));
+            
+            updateUrlStats();
+            $('#mp-import-text').val(''); // 清空输入框
+            showStatus(`✅ 已覆盖导入 ${importedCount} 个URL（自动去重）`);
         });
         
         // 重置播放器位置
@@ -1445,7 +1409,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化最终修复版播放器...');
+        console.log('🔧 初始化修复版播放器...');
         
         // 首先加载CSS
         loadCSS();
@@ -1459,7 +1423,7 @@
             createPlayer();
         });
         
-        console.log('✅ 最终修复版播放器初始化完成');
+        console.log('✅ 修复版播放器初始化完成');
     }
     
     // 启动
