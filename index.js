@@ -1,9 +1,9 @@
-// index.js - 修复双击和卡顿问题，URL数据互通版媒体播放器
+// index.js - 修复移动端按钮显示和URL同步问题
 (function() {
-    console.log('🎵 修复双击和卡顿问题，URL数据互通版媒体播放器加载...');
+    console.log('🎵 修复移动端按钮显示和URL同步问题版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.5.0';
+    const PLUGIN_VERSION = '2.5.1';
     
     // 配置
     let config = {
@@ -34,12 +34,13 @@
     let isVideoPlaying = false;
     let isDraggingProgress = false;
     let lastTapTime = 0;
-    let lastTapTarget = null;
     
     // 检测设备类型
     function isMobileDevice() {
-        return window.innerWidth <= 768 || 
+        const isMobile = window.innerWidth <= 768 || 
                /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        console.log('📱 设备检测:', isMobile ? '移动端' : 'PC端', '屏幕宽度:', window.innerWidth);
+        return isMobile;
     }
     
     // 获取设备类型标识
@@ -253,6 +254,8 @@
                 user-select: none;
                 touch-action: manipulation;
                 transition: all 0.3s ease;
+                visibility: visible !important;
+                opacity: 1 !important;
             }
             
             #media-control-btn:hover {
@@ -362,54 +365,54 @@
             
             /* 移动端响应式调整 */
             @media (max-width: 768px) {
-                body:not(.mobile-optimized) #media-control-btn {
+                #media-control-btn {
                     width: 50px !important;
                     height: 50px !important;
                     font-size: 20px !important;
                 }
                 
-                body:not(.mobile-optimized) #minimal-player {
+                #minimal-player {
                     max-width: 90vw !important;
                 }
                 
-                body:not(.mobile-optimized) .url-tabs {
+                .url-tabs {
                     flex-direction: column;
                 }
                 
-                body:not(.mobile-optimized) .url-tab {
+                .url-tab {
                     margin-right: 0;
                     margin-bottom: 2px;
                     border-radius: 4px;
                 }
                 
-                body:not(.mobile-optimized) .video-progress-container {
+                .video-progress-container {
                     height: 12px;
                 }
                 
-                body:not(.mobile-optimized) #video-progress::-webkit-slider-thumb {
+                #video-progress::-webkit-slider-thumb {
                     width: 20px;
                     height: 20px;
                 }
                 
-                body:not(.mobile-optimized) .custom-slider-thumb {
+                .custom-slider-thumb {
                     width: 20px;
                     height: 20px;
                 }
                 
-                body:not(.mobile-optimized) #video-time {
+                #video-time {
                     font-size: 11px;
                     min-width: 80px;
                 }
             }
             
             @media (max-width: 480px) {
-                body:not(.mobile-optimized) #media-control-btn {
+                #media-control-btn {
                     width: 50px !important;
                     height: 50px !important;
                     font-size: 20px !important;
                 }
                 
-                body:not(.mobile-optimized) #minimal-player {
+                #minimal-player {
                     max-width: 95vw !important;
                 }
             }
@@ -457,7 +460,7 @@
         }
     }
     
-    // 创建播放器
+    // 创建播放器 - 修复按钮显示问题
     function createPlayer() {
         console.log('🔄 创建播放器...', '设备类型:', getDeviceType());
         
@@ -516,7 +519,7 @@
             </div>
         `;
         
-        // 创建控制按钮
+        // 创建控制按钮 - 确保按钮可见
         const buttonPosition = getButtonPosition(isMobile);
         const buttonSize = '50px';
         const buttonFontSize = '20px';
@@ -527,8 +530,11 @@
                 width: ${buttonSize};
                 height: ${buttonSize};
                 font-size: ${buttonFontSize};
+                display: ${config.enabled ? 'flex' : 'none'};
+                visibility: visible;
+                opacity: 1;
             " title="点击切换媒体播放 | 拖动移动位置">
-                🎵
+                ${isPlayerVisible ? '⏹️' : '🎵'}
             </div>
         `;
         
@@ -550,9 +556,14 @@
         setTimeout(() => {
             const btn = document.getElementById('media-control-btn');
             if (btn) {
-                btn.style.display = 'flex';
+                btn.style.display = config.enabled ? 'flex' : 'none';
                 btn.style.visibility = 'visible';
-                console.log('✅ 按钮显示状态确认');
+                btn.style.opacity = '1';
+                console.log('✅ 按钮显示状态确认:', {
+                    display: btn.style.display,
+                    visibility: btn.style.visibility,
+                    opacity: btn.style.opacity
+                });
             }
         }, 100);
     }
@@ -570,7 +581,7 @@
         
         if (button) {
             button.style.touchAction = 'manipulation';
-            button.style.display = 'flex';
+            button.style.display = config.enabled ? 'flex' : 'none';
             button.style.visibility = 'visible';
             button.style.opacity = '1';
             console.log('📱 移动端按钮优化完成');
@@ -626,7 +637,7 @@
         }
     }
     
-    // 绑定播放器事件 - 修复双击切换问题
+    // 绑定播放器事件
     function bindPlayerEvents() {
         const player = document.getElementById('minimal-player');
         const video = document.getElementById('player-video');
@@ -1140,9 +1151,10 @@
             clientY = e.clientY;
         } else {
             clientX = e.touches[0].clientX;
-            clientY = e.touches[0].clientY;
+                     clientY = e.touches[0].clientY;
         }
-                const x = Math.max(0, Math.min(window.innerWidth - player.offsetWidth, clientX - playerDragOffset.x));
+        
+        const x = Math.max(0, Math.min(window.innerWidth - player.offsetWidth, clientX - playerDragOffset.x));
         const y = Math.max(0, Math.min(window.innerHeight - player.offsetHeight, clientY - playerDragOffset.y));
         
         player.style.left = x + 'px';
@@ -1545,11 +1557,20 @@
     // 配置管理 - URL数据互通，其他配置独立
     function loadConfig() {
         try {
-            // 先加载共享的URL配置
+            console.log('🔧 开始加载配置...');
+            
+            // 先尝试加载共享的URL配置
             const sharedUrls = localStorage.getItem('minimal_media_urls_shared');
             if (sharedUrls) {
-                config.mediaUrls = JSON.parse(sharedUrls);
-                console.log('✅ 加载共享URL配置成功，数量:', config.mediaUrls.length);
+                const parsedUrls = JSON.parse(sharedUrls);
+                if (Array.isArray(parsedUrls) && parsedUrls.length > 0) {
+                    config.mediaUrls = parsedUrls;
+                    console.log('✅ 加载共享URL配置成功，数量:', config.mediaUrls.length);
+                } else {
+                    console.log('ℹ️ 共享URL配置为空或无效，使用默认URL');
+                }
+            } else {
+                console.log('ℹ️ 未找到共享URL配置，使用默认URL');
             }
             
             // 再加载设备特定的配置
@@ -1563,9 +1584,19 @@
                     }
                 });
                 console.log('✅ 加载设备特定配置成功');
+            } else {
+                console.log('ℹ️ 未找到设备特定配置，使用默认配置');
             }
+            
+            console.log('📊 最终配置:', {
+                enabled: config.enabled,
+                mediaType: config.mediaType,
+                mediaUrlsCount: config.mediaUrls.length,
+                deviceType: getDeviceType()
+            });
+            
         } catch (error) {
-            console.warn('❌ 加载配置失败，使用默认配置');
+            console.warn('❌ 加载配置失败，使用默认配置:', error);
         }
     }
     
@@ -1609,6 +1640,7 @@
                 <p style="color: #666; font-size: 11px;">🎛️ 进度条拖动：点击进度条任意位置或拖动滑块</p>
                 <p style="color: #007bff; font-size: 11px;">📱 移动端优化：按钮50px，播放器自适应屏幕</p>
                 <p style="color: #ff6b6b; font-size: 11px;">🔄 URL数据：PC端和移动端互通共享</p>
+                <p style="color: #666; font-size: 11px;">📊 当前设备：${getDeviceType() === 'mobile' ? '移动端' : 'PC端'}</p>
                 
                 <div class="form-group">
                     <label><input type="checkbox" id="mp-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
@@ -2023,7 +2055,7 @@
     function updateUrlStats() {
         const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
         const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
-        const otherUrls = config.mediaUrls.filter(url => !isImageUrl(url) && !isVideoUrl(url));
+                const otherUrls = config.mediaUrls.filter(url => !isImageUrl(url) && !isVideoUrl(url));
         
         $('#url-stats').html(`
             <div>总计: ${config.mediaUrls.length}个URL</div>
@@ -2042,23 +2074,26 @@
     }
     
     // 初始化
-     function initialize() {
-        console.log('🔧 初始化修复双击和卡顿问题版播放器...');
+    function initialize() {
+        console.log('🔧 初始化修复移动端按钮显示和URL同步问题版播放器...');
         
         // 首先加载CSS
         loadCSS();
         
-        loadConfig();
-        createPlayer();
-        createSettingsPanel();
-        
-        // 窗口大小变化时重新定位
-        window.addEventListener('resize', function() {
-            console.log('🔄 窗口大小变化，重新创建播放器');
+        // 等待DOM完全加载后再初始化
+        setTimeout(() => {
+            loadConfig();
             createPlayer();
-        });
-        
-        console.log('✅ 修复双击和卡顿问题版播放器初始化完成');
+            createSettingsPanel();
+            
+            // 窗口大小变化时重新定位
+            window.addEventListener('resize', function() {
+                console.log('🔄 窗口大小变化，重新创建播放器');
+                createPlayer();
+            });
+            
+            console.log('✅ 修复移动端按钮显示和URL同步问题版播放器初始化完成');
+        }, 100);
     }
     
     // 启动
@@ -2069,4 +2104,3 @@
     }
     
 })();
-      
