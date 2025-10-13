@@ -1,9 +1,9 @@
-// 文件名: index.js - 最终完善版媒体播放器
+// index.js - 最终完善版媒体播放器
 (function() {
     console.log('🎵 最终完善版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '1.5.0';
+    const PLUGIN_VERSION = '1.6.0';
     
     // 配置
     let config = {
@@ -28,7 +28,7 @@
     let playerDragOffset = { x: 0, y: 0 };
     let isDraggingButton = false;
     let buttonDragOffset = { x: 0, y: 0 };
-    let lastDoubleClickTime = 0;
+    let urlValidationCache = new Map();
     
     // 创建播放器
     function createPlayer() {
@@ -79,24 +79,30 @@
                     "></video>
                 </div>
                 
-                <!-- 视频进度条 -->
+                <!-- 视频进度条（包含缓存显示） -->
                 <div id="video-controls" style="
                     position: absolute;
                     bottom: 0;
                     left: 0;
                     width: 100%;
-                    background: rgba(0,0,0,0.3);
+                    background: rgba(0,0,0,${config.playerOpacity * 0.8});
                     padding: 8px;
                     display: none;
+                    opacity: ${config.playerOpacity};
                 ">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="range" id="video-progress" style="
-                            flex: 1;
-                            height: 6px;
-                            margin: 0;
-                            padding: 0;
-                        " min="0" max="100" value="0">
-                        <span id="video-time" style="color: rgba(255,255,255,0.8); font-size: 11px; min-width: 75px;">0:00 / 0:00</span>
+                        <div class="video-progress-container">
+                            <div id="video-buffer"></div>
+                            <input type="range" id="video-progress" style="
+                                position: relative;
+                                z-index: 2;
+                                width: 100%;
+                                height: 4px;
+                                margin: 0;
+                                opacity: ${config.playerOpacity};
+                            " min="0" max="100" value="0">
+                        </div>
+                        <span id="video-time" style="color: rgba(255,255,255,0.8); font-size: 11px; min-width: 75px; opacity: ${config.playerOpacity};">0:00 / 0:00</span>
                     </div>
                 </div>
             </div>
@@ -179,9 +185,11 @@
         });
         
         video.addEventListener('timeupdate', updateVideoProgress);
+        video.addEventListener('progress', updateVideoBuffer);
         video.addEventListener('loadedmetadata', function() {
             if (config.videoMuted) video.muted = true;
             updateVideoProgress();
+            updateVideoBuffer();
             adjustPlayerHeight();
             ensurePlayerInViewport();
         });
@@ -194,6 +202,18 @@
             adjustPlayerHeight();
             ensurePlayerInViewport();
         });
+    }
+    
+    // 更新视频缓存进度
+    function updateVideoBuffer() {
+        const video = document.getElementById('player-video');
+        const buffer = document.getElementById('video-buffer');
+        
+        if (video && video.buffered && video.buffered.length > 0 && video.duration > 0) {
+            const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+            const bufferPercent = (bufferedEnd / video.duration) * 100;
+            buffer.style.width = bufferPercent + '%';
+        }
     }
     
     // 绑定按钮事件
@@ -396,6 +416,9 @@
         const img = document.getElementById('player-img');
         const video = document.getElementById('player-video');
         const player = document.getElementById('minimal-player');
+        const videoControls = document.getElementById('video-controls');
+        const progress = document.getElementById('video-progress');
+        const timeDisplay = document.getElementById('video-time');
         
         if (player) {
             player.style.background = `rgba(0, 0, 0, ${config.playerOpacity})`;
@@ -405,6 +428,16 @@
         }
         if (video) {
             video.style.opacity = config.playerOpacity;
+        }
+        if (videoControls) {
+            videoControls.style.background = `rgba(0,0,0,${config.playerOpacity * 0.8})`;
+            videoControls.style.opacity = config.playerOpacity;
+        }
+        if (progress) {
+            progress.style.opacity = config.playerOpacity;
+        }
+        if (timeDisplay) {
+            timeDisplay.style.opacity = config.playerOpacity;
         }
     }
     
@@ -526,6 +559,99 @@
         return /\.(mp4|webm|ogg|mov|avi)/i.test(url);
     }
     
+    function isImageUrl(url) {
+        return /\.(jpg|jpeg|png|gif|webp|bmp)/i.test(url);
+    }
+    
+    // URL验证函数
+    async function validateUrl(url) {
+        if (urlValidationCache.has(url)) {
+            return urlValidationCache.get(url);
+        }
+        
+        try {
+            const response = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
+            // no-cors模式下response.ok总是false，但请求成功说明资源存在
+            urlValidationCache.set(url, true);
+            return true;
+        } catch (error) {
+            // 尝试用GET方法验证（对某些服务器更友好）
+            try {
+                const img = new Image();
+                await new Promise((resolve, reject) => {
+                    img.onload = () => resolve(true);
+                    img.onerror = () => reject(new Error('加载失败'));
+                    img.src = url;
+                    setTimeout(() => reject(new Error('超时')), 5000);
+                });
+                urlValidationCache.set(url, true);
+                return true;
+            } catch (imgError) {
+                urlValidationCache.set(url, false);
+                return false;
+            }
+        }
+    }
+    
+    // 验证所有URL
+    async function validateAllUrls() {
+        const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+        const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+        const otherUrls = config.mediaUrls.filter(url => !isImageUrl(url) && !isVideoUrl(url));
+        
+        let validImages = 0, invalidImages = 0;
+        let validVideos = 0, invalidVideos = 0;
+        let validOthers = 0, invalidOthers = 0;
+        
+        // 验证图片
+        for (const url of imageUrls) {
+            const isValid = await validateUrl(url);
+            if (isValid) validImages++; else invalidImages++;
+        }
+        
+        // 验证视频
+        for (const url of videoUrls) {
+            const isValid = await validateUrl(url);
+            if (isValid) validVideos++; else invalidVideos++;
+        }
+        
+        // 验证其他
+        for (const url of otherUrls) {
+            const isValid = await validateUrl(url);
+            if (isValid) validOthers++; else invalidOthers++;
+        }
+        
+        return {
+            images: { valid: validImages, invalid: invalidImages, total: imageUrls.length },
+            videos: { valid: validVideos, invalid: invalidVideos, total: videoUrls.length },
+            others: { valid: validOthers, invalid: invalidOthers, total: otherUrls.length },
+            total: {
+                valid: validImages + validVideos + validOthers,
+                invalid: invalidImages + invalidVideos + invalidOthers,
+                total: config.mediaUrls.length
+            }
+        };
+    }
+    
+    // 清除无效URL
+    function removeInvalidUrls() {
+        const invalidUrls = [];
+        const validUrls = [];
+        
+        // 先收集所有URL的验证状态
+        config.mediaUrls.forEach(url => {
+            if (urlValidationCache.get(url) === false) {
+                invalidUrls.push(url);
+            } else {
+                validUrls.push(url);
+            }
+        });
+        
+        config.mediaUrls = validUrls;
+        saveConfig();
+        return invalidUrls.length;
+    }
+    
     // 配置管理
     function loadConfig() {
         try {
@@ -556,6 +682,10 @@
         
         const oldSettings = document.getElementById('media-player-settings');
         if (oldSettings) oldSettings.remove();
+        
+        const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+        const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+        const otherUrls = config.mediaUrls.filter(url => !isImageUrl(url) && !isVideoUrl(url));
         
         const html = `
             <div class="list-group-item" id="media-player-settings">
@@ -618,9 +748,37 @@
                     <label><input type="checkbox" id="mp-muted" ${config.videoMuted ? 'checked' : ''}> 视频静音播放</label>
                 </div>
                 
+                <!-- URL管理区域 -->
                 <div class="form-group">
-                    <label>媒体URL列表:</label>
-                    <textarea class="form-control" id="mp-urls" rows="5" placeholder="每行一个URL" style="font-size: 12px;">${config.mediaUrls.join('\n')}</textarea>
+                    <label>媒体URL管理</label>
+                    <div class="url-stats" id="url-stats">
+                        <div>总计: ${config.mediaUrls.length}个URL</div>
+                        <div>图片: ${imageUrls.length}个 | 视频: ${videoUrls.length}个 | 其他: ${otherUrls.length}个</div>
+                        <div id="validation-stats">点击"检测URL"验证可用性</div>
+                    </div>
+                    
+                    <div class="url-tabs">
+                        <div class="url-tab active" data-tab="all">全部URL</div>
+                        <div class="url-tab" data-tab="images">图片</div>
+                        <div class="url-tab" data-tab="videos">视频</div>
+                    </div>
+                    
+                    <div class="url-tab-content active" id="tab-all">
+                        <textarea class="form-control" id="mp-urls" rows="5" placeholder="每行一个URL" style="font-size: 12px;">${config.mediaUrls.join('\n')}</textarea>
+                    </div>
+                    
+                    <div class="url-tab-content" id="tab-images">
+                        <textarea class="form-control" id="mp-urls-images" rows="3" placeholder="图片URL" style="font-size: 12px;">${imageUrls.join('\n')}</textarea>
+                    </div>
+                    
+                    <div class="url-tab-content" id="tab-videos">
+                        <textarea class="form-control" id="mp-urls-videos" rows="3" placeholder="视频URL" style="font-size: 12px;">${videoUrls.join('\n')}</textarea>
+                    </div>
+                    
+                    <div class="btn-group mt-2">
+                        <button class="btn btn-sm btn-info" id="mp-validate-urls">检测URL</button>
+                        <button class="btn btn-sm btn-warning" id="mp-clear-invalid">清除失效URL</button>
+                    </div>
                 </div>
                 
                 <div class="btn-group">
@@ -712,7 +870,6 @@
             $('#mp-interval-input').val(value);
             $('#interval-value').text(value + 'ms');
             config.slideInterval = value;
-            // 如果正在播放，重新设置定时器
             if (slideTimer) {
                 clearInterval(slideTimer);
                 slideTimer = setInterval(nextMedia, config.slideInterval);
@@ -720,7 +877,7 @@
             saveConfig();
         });
         
-        $('#mp-interval-input').on('input', function() {
+                $('#mp-interval-input').on('input', function() {
             let value = parseInt(this.value) || 3000;
             value = Math.max(500, Math.min(10000, value));
             $('#mp-interval').val(value);
@@ -752,9 +909,72 @@
             showStatus('静音设置已更新');
         });
         
-        $('#mp-urls').on('input', function() {
-            config.mediaUrls = this.value.split('\n').filter(url => url.trim());
+        // URL选项卡切换
+        $('.url-tab').on('click', function() {
+            const tab = $(this).data('tab');
+            $('.url-tab').removeClass('active');
+            $(this).addClass('active');
+            $('.url-tab-content').removeClass('active');
+            $(`#tab-${tab}`).addClass('active');
+        });
+        
+        // URL列表输入
+        $('#mp-urls, #mp-urls-images, #mp-urls-videos').on('input', function() {
+            const allUrls = $('#mp-urls').val().split('\n').filter(url => url.trim());
+            const imageUrls = $('#mp-urls-images').val().split('\n').filter(url => url.trim());
+            const videoUrls = $('#mp-urls-videos').val().split('\n').filter(url => url.trim());
+            
+            // 合并所有URL，去重
+            const mergedUrls = [...new Set([...allUrls, ...imageUrls, ...videoUrls])].filter(url => url);
+            config.mediaUrls = mergedUrls;
             saveConfig();
+            
+            // 更新统计信息
+            updateUrlStats();
+        });
+        
+        // 检测URL
+        $('#mp-validate-urls').on('click', async function() {
+            const button = $(this);
+            button.prop('disabled', true).text('检测中...');
+            
+            try {
+                const stats = await validateAllUrls();
+                const statsEl = $('#validation-stats');
+                
+                let statsHtml = `
+                    <div>图片: <span class="url-status-valid">${stats.images.valid}正常</span> / <span class="url-status-invalid">${stats.images.invalid}失效</span></div>
+                    <div>视频: <span class="url-status-valid">${stats.videos.valid}正常</span> / <span class="url-status-invalid">${stats.videos.invalid}失效</span></div>
+                    <div>总计: <span class="url-status-valid">${stats.total.valid}正常</span> / <span class="url-status-invalid">${stats.total.invalid}失效</span></div>
+                `;
+                
+                statsEl.html(statsHtml);
+                showStatus('✅ URL检测完成');
+            } catch (error) {
+                showStatus('❌ URL检测失败: ' + error.message, 'error');
+            } finally {
+                button.prop('disabled', false).text('检测URL');
+            }
+        });
+        
+        // 清除失效URL
+        $('#mp-clear-invalid').on('click', function() {
+            const removedCount = removeInvalidUrls();
+            if (removedCount > 0) {
+                // 更新所有URL文本框
+                $('#mp-urls').val(config.mediaUrls.join('\n'));
+                
+                // 更新分类URL文本框
+                const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+                const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+                $('#mp-urls-images').val(imageUrls.join('\n'));
+                $('#mp-urls-videos').val(videoUrls.join('\n'));
+                
+                updateUrlStats();
+                showStatus(`✅ 已清除 ${removedCount} 个失效URL`);
+            } else {
+                showStatus('没有发现失效的URL');
+            }
         });
         
         $('#mp-save').on('click', function() {
@@ -774,11 +994,24 @@
         });
     }
     
-    function showStatus(message) {
+    // 更新URL统计信息
+    function updateUrlStats() {
+        const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+        const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+        const otherUrls = config.mediaUrls.filter(url => !isImageUrl(url) && !isVideoUrl(url));
+        
+        $('#url-stats').html(`
+            <div>总计: ${config.mediaUrls.length}个URL</div>
+            <div>图片: ${imageUrls.length}个 | 视频: ${videoUrls.length}个 | 其他: ${otherUrls.length}个</div>
+            <div id="validation-stats">点击"检测URL"验证可用性</div>
+        `);
+    }
+    
+    function showStatus(message, type = 'success') {
         const statusEl = document.getElementById('mp-status');
         if (statusEl) {
             statusEl.textContent = message;
-            statusEl.style.color = 'green';
+            statusEl.style.color = type === 'error' ? '#dc3545' : '#28a745';
             setTimeout(() => statusEl.textContent = '', 3000);
         }
     }
@@ -791,9 +1024,29 @@
         createPlayer();
         createSettingsPanel();
         
-        // 添加CSS样式（修复进度条位置）
+        // 加载CSS文件
+        loadCSS();
+        
+        // 窗口大小变化时重新定位
+        window.addEventListener('resize', function() {
+            if (isPlayerVisible) {
+                ensurePlayerInViewport();
+            }
+        });
+        
+        console.log('✅ 最终完善版播放器初始化完成');
+    }
+    
+    // 加载CSS文件
+    function loadCSS() {
+        // 检查是否已加载CSS
+        if (document.getElementById('media-player-css')) return;
+        
+        // 创建style元素并插入CSS内容
         const style = document.createElement('style');
+        style.id = 'media-player-css';
         style.textContent = `
+            /* 这里放置上面style.css文件的内容 */
             #minimal-player {
                 transition: transform 0.3s ease;
             }
@@ -846,16 +1099,63 @@
                 width: 100%;
                 margin: 10px 0;
             }
+            #video-buffer {
+                position: absolute;
+                top: 0;
+                left: 0;
+                height: 100%;
+                background: rgba(255,255,255,0.2);
+                border-radius: 2px;
+                pointer-events: none;
+            }
+            .video-progress-container {
+                position: relative;
+                flex: 1;
+                height: 4px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 2px;
+                margin-right: 8px;
+            }
+            .url-status-valid {
+                color: #28a745;
+            }
+            .url-status-invalid {
+                color: #dc3545;
+                text-decoration: line-through;
+            }
+            .url-stats {
+                font-size: 12px;
+                margin-bottom: 10px;
+                padding: 5px;
+                background: #f8f9fa;
+                border-radius: 3px;
+            }
+            .url-tabs {
+                display: flex;
+                margin-bottom: 10px;
+                border-bottom: 1px solid #dee2e6;
+            }
+            .url-tab {
+                padding: 8px 16px;
+                cursor: pointer;
+                border: 1px solid transparent;
+                border-bottom: none;
+                border-radius: 4px 4px 0 0;
+                margin-right: 5px;
+            }
+            .url-tab.active {
+                background: #007bff;
+                color: white;
+                border-color: #007bff;
+            }
+            .url-tab-content {
+                display: none;
+            }
+            .url-tab-content.active {
+                display: block;
+            }
         `;
         document.head.appendChild(style);
-        
-        window.addEventListener('resize', function() {
-            if (isPlayerVisible) {
-                ensurePlayerInViewport();
-            }
-        });
-        
-        console.log('✅ 最终完善版播放器初始化完成');
     }
     
     // 启动
