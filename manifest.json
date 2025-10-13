@@ -1,5 +1,7 @@
 {
-    "display_name": "图片插入插件",
-    "author": "Assistant",
-    "version": "1.0.0"
+    "display_name": "网络媒体播放器 Pro",
+    "author": "你的名字 & AI助手",
+    "version": "7.0.5",
+    "js": "index.js",
+    "css": "style.css"
 }
