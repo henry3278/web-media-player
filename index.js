@@ -1,9 +1,9 @@
-// index.js - 最终完善版媒体播放器
+// index.js - 修复版媒体播放器
 (function() {
-    console.log('🎵 最终完善版媒体播放器加载...');
+    console.log('🎵 修复版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '1.6.0';
+    const PLUGIN_VERSION = '1.7.0';
     
     // 配置
     let config = {
@@ -18,6 +18,7 @@
         videoMuted: true,
         playerWidth: 300,
         playerOpacity: 0.95,
+        controlsOpacity: 0.9,  // 新增：控制条透明度
         buttonPosition: 'bottom-right'
     };
     
@@ -38,14 +39,21 @@
         if (existingPlayer) existingPlayer.remove();
         if (existingBtn) existingBtn.remove();
         
+        // 获取保存的播放器位置
+        const savedPlayerPos = localStorage.getItem('media_player_position');
+        let playerStyle = `width: ${config.playerWidth}px;`;
+        if (savedPlayerPos) {
+            const pos = JSON.parse(savedPlayerPos);
+            playerStyle += `left: ${pos.x}px; top: ${pos.y}px; transform: none;`;
+        } else {
+            playerStyle += 'top: 50%; left: 50%; transform: translate(-50%, -50%);';
+        }
+        
         // 创建播放器
         const playerHTML = `
             <div id="minimal-player" style="
                 position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                width: ${config.playerWidth}px;
+                ${playerStyle}
                 background: rgba(0, 0, 0, ${config.playerOpacity});
                 border-radius: 12px;
                 z-index: 10000;
@@ -79,30 +87,53 @@
                     "></video>
                 </div>
                 
-                <!-- 视频进度条（包含缓存显示） -->
+                <!-- 视频进度条（缓存和播放进度重叠） -->
                 <div id="video-controls" style="
                     position: absolute;
                     bottom: 0;
                     left: 0;
                     width: 100%;
-                    background: rgba(0,0,0,${config.playerOpacity * 0.8});
+                    background: rgba(0,0,0,${config.controlsOpacity});
                     padding: 8px;
                     display: none;
-                    opacity: ${config.playerOpacity};
                 ">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <div class="video-progress-container">
-                            <div id="video-buffer"></div>
+                            <!-- 缓存进度条（底层） -->
+                            <div id="video-buffer" style="
+                                position: absolute;
+                                top: 0;
+                                left: 0;
+                                height: 100%;
+                                background: rgba(255,255,255,0.3);
+                                border-radius: 2px;
+                                pointer-events: none;
+                                z-index: 1;
+                            "></div>
+                            <!-- 播放进度条（中层） -->
+                            <div id="video-played" style="
+                                position: absolute;
+                                top: 0;
+                                left: 0;
+                                height: 100%;
+                                background: rgba(100,100,100,0.6);
+                                border-radius: 2px;
+                                pointer-events: none;
+                                z-index: 2;
+                            "></div>
+                            <!-- 拖动滑块（顶层） -->
                             <input type="range" id="video-progress" style="
                                 position: relative;
-                                z-index: 2;
+                                z-index: 3;
                                 width: 100%;
-                                height: 4px;
+                                height: 6px;
                                 margin: 0;
-                                opacity: ${config.playerOpacity};
+                                opacity: 1;
+                                -webkit-appearance: none;
+                                background: transparent;
                             " min="0" max="100" value="0">
                         </div>
-                        <span id="video-time" style="color: rgba(255,255,255,0.8); font-size: 11px; min-width: 75px; opacity: ${config.playerOpacity};">0:00 / 0:00</span>
+                        <span id="video-time" style="color: rgba(255,255,255,0.9); font-size: 11px; min-width: 75px;">0:00 / 0:00</span>
                     </div>
                 </div>
             </div>
@@ -137,6 +168,18 @@
         document.body.insertAdjacentHTML('beforeend', buttonHTML);
         bindPlayerEvents();
         bindButtonEvents();
+    }
+    
+    // 保存播放器位置
+    function savePlayerPosition() {
+        const player = document.getElementById('minimal-player');
+        if (player && player.style.display !== 'none') {
+            const rect = player.getBoundingClientRect();
+            localStorage.setItem('media_player_position', JSON.stringify({
+                x: rect.left,
+                y: rect.top
+            }));
+        }
     }
     
     // 获取按钮位置
@@ -202,6 +245,9 @@
             adjustPlayerHeight();
             ensurePlayerInViewport();
         });
+        
+        // 窗口关闭前保存位置
+        window.addEventListener('beforeunload', savePlayerPosition);
     }
     
     // 更新视频缓存进度
@@ -213,6 +259,21 @@
             const bufferedEnd = video.buffered.end(video.buffered.length - 1);
             const bufferPercent = (bufferedEnd / video.duration) * 100;
             buffer.style.width = bufferPercent + '%';
+        }
+    }
+    
+    // 更新视频播放进度
+    function updateVideoProgress() {
+        const video = document.getElementById('player-video');
+        const progress = document.getElementById('video-progress');
+        const played = document.getElementById('video-played');
+        const timeDisplay = document.getElementById('video-time');
+        
+        if (video.duration > 0) {
+            const progressPercent = (video.currentTime / video.duration) * 100;
+            progress.value = progressPercent;
+            played.style.width = progressPercent + '%';
+            timeDisplay.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
         }
     }
     
@@ -305,7 +366,7 @@
     
     // 开始拖动播放器
     function startPlayerDrag(e) {
-        if (e.target.id === 'video-progress' || e.target.id === 'video-time') return;
+        if (e.target.id === 'video-progress') return;
         
         e.preventDefault();
         isDraggingPlayer = true;
@@ -357,6 +418,7 @@
         isDraggingPlayer = false;
         const player = document.getElementById('minimal-player');
         player.style.cursor = 'move';
+        savePlayerPosition(); // 拖动结束时保存位置
         
         document.removeEventListener('mousemove', onPlayerDrag);
         document.removeEventListener('mouseup', stopPlayerDrag);
@@ -384,6 +446,7 @@
         player.style.left = newX + 'px';
         player.style.top = newY + 'px';
         player.style.transform = 'none';
+        savePlayerPosition();
     }
     
     // 调整播放器高度
@@ -417,8 +480,6 @@
         const video = document.getElementById('player-video');
         const player = document.getElementById('minimal-player');
         const videoControls = document.getElementById('video-controls');
-        const progress = document.getElementById('video-progress');
-        const timeDisplay = document.getElementById('video-time');
         
         if (player) {
             player.style.background = `rgba(0, 0, 0, ${config.playerOpacity})`;
@@ -430,14 +491,7 @@
             video.style.opacity = config.playerOpacity;
         }
         if (videoControls) {
-            videoControls.style.background = `rgba(0,0,0,${config.playerOpacity * 0.8})`;
-            videoControls.style.opacity = config.playerOpacity;
-        }
-        if (progress) {
-            progress.style.opacity = config.playerOpacity;
-        }
-        if (timeDisplay) {
-            timeDisplay.style.opacity = config.playerOpacity;
+            videoControls.style.background = `rgba(0,0,0,${config.controlsOpacity})`;
         }
     }
     
@@ -459,6 +513,7 @@
             btn.title = '开始播放';
             stopPlayback();
         }
+        savePlayerPosition();
     }
     
     function startPlayback() {
@@ -517,11 +572,19 @@
             if (config.videoMuted) video.muted = true;
             video.play().catch(e => {
                 console.log('视频播放失败:', e);
+                // 标记为失效URL
+                urlValidationCache.set(url, false);
                 setTimeout(nextMedia, 1000);
             });
         } else {
             img.src = url;
             img.style.display = 'block';
+            // 检查图片是否加载成功
+            img.onerror = function() {
+                console.log('图片加载失败:', url);
+                urlValidationCache.set(url, false);
+                nextMedia();
+            };
             slideTimer = setInterval(nextMedia, config.slideInterval);
         }
         
@@ -535,18 +598,6 @@
             Math.floor(Math.random() * config.mediaUrls.length) : 
             (currentIndex + 1) % config.mediaUrls.length;
         loadCurrentMedia();
-    }
-    
-    function updateVideoProgress() {
-        const video = document.getElementById('player-video');
-        const progress = document.getElementById('video-progress');
-        const timeDisplay = document.getElementById('video-time');
-        
-        if (video.duration > 0) {
-            const progressPercent = (video.currentTime / video.duration) * 100;
-            progress.value = progressPercent;
-            timeDisplay.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
-        }
     }
     
     function formatTime(seconds) {
@@ -563,34 +614,64 @@
         return /\.(jpg|jpeg|png|gif|webp|bmp)/i.test(url);
     }
     
-    // URL验证函数
+    // 改进的URL验证函数
     async function validateUrl(url) {
         if (urlValidationCache.has(url)) {
             return urlValidationCache.get(url);
         }
         
-        try {
-            const response = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
-            // no-cors模式下response.ok总是false，但请求成功说明资源存在
-            urlValidationCache.set(url, true);
-            return true;
-        } catch (error) {
-            // 尝试用GET方法验证（对某些服务器更友好）
-            try {
+        return new Promise((resolve) => {
+            const timer = setTimeout(() => {
+                resolve(false);
+                console.log('URL验证超时:', url);
+            }, 8000); // 8秒超时
+            
+            if (isImageUrl(url)) {
+                // 图片验证
                 const img = new Image();
-                await new Promise((resolve, reject) => {
-                    img.onload = () => resolve(true);
-                    img.onerror = () => reject(new Error('加载失败'));
-                    img.src = url;
-                    setTimeout(() => reject(new Error('超时')), 5000);
+                img.onload = function() {
+                    clearTimeout(timer);
+                    urlValidationCache.set(url, true);
+                    resolve(true);
+                };
+                img.onerror = function() {
+                    clearTimeout(timer);
+                    urlValidationCache.set(url, false);
+                    resolve(false);
+                };
+                img.src = url;
+            } else if (isVideoUrl(url)) {
+                // 视频验证
+                const video = document.createElement('video');
+                video.addEventListener('loadeddata', function() {
+                    clearTimeout(timer);
+                    urlValidationCache.set(url, true);
+                    resolve(true);
                 });
-                urlValidationCache.set(url, true);
-                return true;
-            } catch (imgError) {
-                urlValidationCache.set(url, false);
-                return false;
+                video.addEventListener('error', function() {
+                    clearTimeout(timer);
+                    urlValidationCache.set(url, false);
+                    resolve(false);
+                });
+                video.src = url;
+                video.load();
+            } else {
+                // 其他类型URL
+                fetch(url, { 
+                    method: 'GET',
+                    mode: 'no-cors',
+                    cache: 'no-cache'
+                }).then(() => {
+                    clearTimeout(timer);
+                    urlValidationCache.set(url, true);
+                    resolve(true);
+                }).catch(() => {
+                    clearTimeout(timer);
+                    urlValidationCache.set(url, false);
+                    resolve(false);
+                });
             }
-        }
+        });
     }
     
     // 验证所有URL
@@ -638,7 +719,6 @@
         const invalidUrls = [];
         const validUrls = [];
         
-        // 先收集所有URL的验证状态
         config.mediaUrls.forEach(url => {
             if (urlValidationCache.get(url) === false) {
                 invalidUrls.push(url);
@@ -714,6 +794,13 @@
                 </div>
                 
                 <div class="form-group">
+                    <label>控制条透明度: <span id="controls-opacity-value">${Math.round(config.controlsOpacity * 100)}%</span></label>
+                    <input type="range" class="form-control-range" id="mp-controls-opacity" min="10" max="100" value="${config.controlsOpacity * 100}">
+                    <input type="number" class="form-control mt-1" id="mp-controls-opacity-input" min="10" max="100" value="${Math.round(config.controlsOpacity * 100)}" style="width: 100px; display: inline-block;">
+                    <span>%</span>
+                </div>
+                
+                <div class="form-group">
                     <label>播放器宽度: <span id="width-value">${config.playerWidth}px</span></label>
                     <input type="range" class="form-control-range" id="mp-width" min="200" max="800" value="${config.playerWidth}">
                     <input type="number" class="form-control mt-1" id="mp-width-input" min="200" max="800" value="${config.playerWidth}" style="width: 100px; display: inline-block;">
@@ -785,6 +872,7 @@
                     <button class="btn btn-sm btn-success" id="mp-save">保存设置</button>
                     <button class="btn btn-sm btn-primary" id="mp-test">测试播放</button>
                     <button class="btn btn-sm btn-secondary" id="mp-reset-btn">重置按钮位置</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="mp-reset-player-pos">重置播放器位置</button>
                 </div>
                 
                 <div id="mp-status" style="margin-top: 10px; font-size: 12px;"></div>
@@ -814,7 +902,7 @@
             showStatus('按钮位置已更新');
         });
         
-        // 透明度滑块和输入框联动
+        // 播放器透明度
         $('#mp-opacity').on('input', function() {
             const value = parseInt(this.value);
             $('#mp-opacity-input').val(value);
@@ -834,6 +922,26 @@
             saveConfig();
         });
         
+        // 控制条透明度
+        $('#mp-controls-opacity').on('input', function() {
+            const value = parseInt(this.value);
+            $('#mp-controls-opacity-input').val(value);
+            $('#controls-opacity-value').text(value + '%');
+            config.controlsOpacity = value / 100;
+            updateMediaOpacity();
+            saveConfig();
+        });
+        
+        $('#mp-controls-opacity-input').on('input', function() {
+            let value = parseInt(this.value) || 90;
+            value = Math.max(10, Math.min(100, value));
+            $('#mp-controls-opacity').val(value);
+            $('#controls-opacity-value').text(value + '%');
+            config.controlsOpacity = value / 100;
+            updateMediaOpacity();
+            saveConfig();
+        });
+        
         // 宽度滑块和输入框联动
         $('#mp-width').on('input', function() {
             const value = parseInt(this.value);
@@ -849,7 +957,7 @@
             saveConfig();
         });
         
-        $('#mp-width-input').on('input', function() {
+                $('#mp-width-input').on('input', function() {
             let value = parseInt(this.value) || 300;
             value = Math.max(200, Math.min(800, value));
             $('#mp-width').val(value);
@@ -877,7 +985,7 @@
             saveConfig();
         });
         
-                $('#mp-interval-input').on('input', function() {
+        $('#mp-interval-input').on('input', function() {
             let value = parseInt(this.value) || 3000;
             value = Math.max(500, Math.min(10000, value));
             $('#mp-interval').val(value);
@@ -977,6 +1085,13 @@
             }
         });
         
+        // 重置播放器位置
+        $('#mp-reset-player-pos').on('click', function() {
+            localStorage.removeItem('media_player_position');
+            createPlayer();
+            showStatus('✅ 播放器位置已重置到中心');
+        });
+        
         $('#mp-save').on('click', function() {
             saveConfig();
             showStatus('✅ 所有设置已保存');
@@ -1018,7 +1133,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化最终完善版播放器...');
+        console.log('🔧 初始化修复版播放器...');
         
         loadConfig();
         createPlayer();
@@ -1034,7 +1149,7 @@
             }
         });
         
-        console.log('✅ 最终完善版播放器初始化完成');
+        console.log('✅ 修复版播放器初始化完成');
     }
     
     // 加载CSS文件
@@ -1046,20 +1161,30 @@
         const style = document.createElement('style');
         style.id = 'media-player-css';
         style.textContent = `
-            /* 这里放置上面style.css文件的内容 */
             #minimal-player {
                 transition: transform 0.3s ease;
             }
             #minimal-player:hover {
                 transform: scale(1.02);
             }
+            .video-progress-container {
+                position: relative;
+                flex: 1;
+                height: 6px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 3px;
+                margin-right: 8px;
+            }
             #video-progress {
                 -webkit-appearance: none;
                 width: 100%;
-                background: rgba(255,255,255,0.1);
+                height: 6px;
+                background: transparent;
                 border-radius: 3px;
                 outline: none;
                 cursor: pointer;
+                position: relative;
+                z-index: 3;
             }
             #video-progress::-webkit-slider-thumb {
                 -webkit-appearance: none;
@@ -1069,13 +1194,12 @@
                 background: #6b7280;
                 cursor: pointer;
                 border: 2px solid #d1d5db;
-                margin-top: -5px;
             }
             #video-progress::-webkit-slider-runnable-track {
                 width: 100%;
-                height: 4px;
-                background: rgba(255,255,255,0.1);
-                border-radius: 2px;
+                height: 6px;
+                background: transparent;
+                border-radius: 3px;
             }
             #video-progress::-moz-range-thumb {
                 width: 14px;
@@ -1087,9 +1211,9 @@
             }
             #video-progress::-moz-range-track {
                 width: 100%;
-                height: 4px;
-                background: rgba(255,255,255,0.1);
-                border-radius: 2px;
+                height: 6px;
+                background: transparent;
+                border-radius: 3px;
                 border: none;
             }
             #media-control-btn:active {
@@ -1098,23 +1222,6 @@
             .form-control-range {
                 width: 100%;
                 margin: 10px 0;
-            }
-            #video-buffer {
-                position: absolute;
-                top: 0;
-                left: 0;
-                height: 100%;
-                background: rgba(255,255,255,0.2);
-                border-radius: 2px;
-                pointer-events: none;
-            }
-            .video-progress-container {
-                position: relative;
-                flex: 1;
-                height: 4px;
-                background: rgba(255,255,255,0.1);
-                border-radius: 2px;
-                margin-right: 8px;
             }
             .url-status-valid {
                 color: #28a745;
