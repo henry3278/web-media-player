@@ -1,9 +1,9 @@
-// index.js - 完整修复版本
+// index.js - 优化版媒体播放器
 (function() {
-    console.log('🎵 媒体播放器完整修复版本加载...');
+    console.log('🎵 优化版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.6.0';
+    const PLUGIN_VERSION = '2.2.0';
     
     // 配置
     let config = {
@@ -30,8 +30,6 @@
     let isDraggingButton = false;
     let buttonDragOffset = { x: 0, y: 0 };
     let urlValidationCache = new Map();
-    let controlsHideTimer = null;
-    let isVideoPlaying = false;
     
     // 首先加载CSS
     function loadCSS() {
@@ -51,6 +49,7 @@
                 overflow: hidden;
                 box-shadow: 0 8px 32px rgba(0,0,0,0.4);
                 cursor: move;
+                /* 移除边框 */
                 border: none;
             }
             
@@ -73,7 +72,7 @@
                 display: none;
             }
             
-            /* 视频控制条样式 */
+            /* 视频控制条样式 - 优化进度条显示 */
             #video-controls {
                 position: absolute;
                 bottom: 0;
@@ -83,13 +82,7 @@
                 display: none;
                 background: rgba(0,0,0,0.8);
                 box-sizing: border-box;
-                transition: opacity 0.3s ease;
-                opacity: 1;
-            }
-            
-            #video-controls.hidden {
-                opacity: 0;
-                pointer-events: none;
+                transition: background-color 0.3s ease;
             }
             
             .video-controls-inner {
@@ -106,7 +99,6 @@
                 background: rgba(255,255,255,0.15);
                 border-radius: 4px;
                 overflow: hidden;
-                cursor: pointer;
             }
             
             #video-buffer {
@@ -146,7 +138,6 @@
                 position: relative;
                 z-index: 3;
                 margin: 0;
-                opacity: 0;
             }
             
             #video-progress::-webkit-slider-thumb {
@@ -158,6 +149,12 @@
                 cursor: pointer;
                 border: 2px solid #764ba2;
                 box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                transition: all 0.2s ease;
+            }
+            
+            #video-progress::-webkit-slider-thumb:hover {
+                transform: scale(1.2);
+                background: #f0f0f0;
             }
             
             #video-progress::-webkit-slider-runnable-track {
@@ -208,6 +205,12 @@
                 box-shadow: 0 4px 15px rgba(0,0,0,0.2);
                 user-select: none;
                 touch-action: none;
+                transition: all 0.3s ease;
+            }
+            
+            #media-control-btn:hover {
+                transform: scale(1.1);
+                box-shadow: 0 6px 20px rgba(0,0,0,0.3);
             }
             
             #media-control-btn:active {
@@ -325,37 +328,7 @@
         `;
         document.head.appendChild(style);
     }
-
-    // 显示控制条（仅视频时使用）
-    function showControls() {
-        const videoControls = document.getElementById('video-controls');
-        const video = document.getElementById('player-video');
-        
-        if (video && video.style.display !== 'none' && videoControls) {
-            videoControls.classList.remove('hidden');
-            videoControls.style.display = 'flex';
-            
-            if (controlsHideTimer) {
-                clearTimeout(controlsHideTimer);
-            }
-            
-            controlsHideTimer = setTimeout(hideControls, 3000);
-        }
-    }
-
-    // 隐藏控制条
-    function hideControls() {
-        const videoControls = document.getElementById('video-controls');
-        if (videoControls) {
-            videoControls.classList.add('hidden');
-            setTimeout(() => {
-                if (videoControls.classList.contains('hidden')) {
-                    videoControls.style.display = 'none';
-                }
-            }, 300);
-        }
-    }
-
+    
     // 创建播放器
     function createPlayer() {
         // 移除已存在的元素
@@ -374,7 +347,7 @@
             playerStyle += 'top: 50%; left: 50%; transform: translate(-50%, -50%);';
         }
         
-        // 创建播放器HTML
+        // 创建播放器HTML - 优化进度条结构
         const playerHTML = `
             <div id="minimal-player" style="${playerStyle}">
                 <div id="player-content">
@@ -382,7 +355,7 @@
                     <video id="player-video"></video>
                 </div>
                 
-                <div id="video-controls" class="hidden">
+                <div id="video-controls">
                     <div class="video-controls-inner">
                         <div class="video-progress-container">
                             <div id="video-buffer"></div>
@@ -395,7 +368,7 @@
             </div>
         `;
         
-        // 创建控制按钮
+        // 创建控制按钮（移动端适配）
         const buttonPosition = getButtonPosition();
         const isMobile = window.innerWidth <= 768;
         const buttonSize = isMobile ? '60px' : '50px';
@@ -408,7 +381,6 @@
                 width: ${buttonSize};
                 height: ${buttonSize};
                 font-size: ${buttonFontSize};
-                display: ${config.enabled ? 'flex' : 'none'};
             " title="点击切换媒体播放 | 拖动移动位置">
                 🎵
             </div>
@@ -420,7 +392,7 @@
         bindButtonEvents();
         updateMediaOpacity();
     }
-
+    
     // 获取移动端按钮位置
     function getMobileButtonPosition() {
         const savedPos = localStorage.getItem('media_button_position');
@@ -434,7 +406,7 @@
         }
         return 'bottom: 20px; right: 20px;';
     }
-
+    
     // 保存播放器位置
     function savePlayerPosition() {
         const player = document.getElementById('minimal-player');
@@ -446,7 +418,7 @@
             }));
         }
     }
-
+    
     // 获取按钮位置
     function getButtonPosition() {
         const savedPos = localStorage.getItem('media_button_position');
@@ -462,66 +434,26 @@
             default: return 'bottom: 60px; right: 20px;';
         }
     }
-
+    
     // 绑定播放器事件
     function bindPlayerEvents() {
         const player = document.getElementById('minimal-player');
         const video = document.getElementById('player-video');
-        const img = document.getElementById('player-img');
         const progress = document.getElementById('video-progress');
-        const progressContainer = document.querySelector('.video-progress-container');
         
-        // 双击切换下一个媒体
         player.addEventListener('dblclick', function(e) {
-            if (e.target.id !== 'video-progress' && e.target !== progressContainer) {
-                nextMedia();
-            }
-        });
-        
-        // 单击视频显示控制条（图片不显示）
-        video.addEventListener('click', function(e) {
-            e.stopPropagation();
-            showControls();
-        });
-        
-        // 单击图片不显示控制条
-        img.addEventListener('click', function(e) {
-            e.stopPropagation();
-            nextMedia();
-        });
-        
-        // 点击播放器其他区域
-        player.addEventListener('click', function(e) {
-            if (e.target === player) {
-                if (video.style.display !== 'none') {
-                    showControls();
-                }
-            }
+            if (e.target.id !== 'video-progress') nextMedia();
         });
         
         player.addEventListener('mousedown', startPlayerDrag);
         player.addEventListener('touchstart', startPlayerDrag);
         
-        // 进度条拖动功能
+        // 视频控制 - 优化进度条事件
         progress.addEventListener('input', function() {
             if (video.duration) {
                 video.currentTime = (this.value / 100) * video.duration;
-                showControls();
             }
         });
-        
-        // 点击进度条容器也可以拖动
-        if (progressContainer) {
-            progressContainer.addEventListener('click', function(e) {
-                const rect = this.getBoundingClientRect();
-                const percent = (e.clientX - rect.left) / rect.width;
-                if (video.duration) {
-                    video.currentTime = percent * video.duration;
-                    updateVideoProgress();
-                    showControls();
-                }
-            });
-        }
         
         video.addEventListener('timeupdate', updateVideoProgress);
         video.addEventListener('progress', updateVideoBuffer);
@@ -531,24 +463,11 @@
             updateVideoBuffer();
             adjustPlayerHeight();
             ensurePlayerInViewport();
-            showControls();
         });
         
-        video.addEventListener('play', function() {
-            isVideoPlaying = true;
-            showControls();
-        });
+        video.addEventListener('ended', nextMedia);
         
-        video.addEventListener('pause', function() {
-            isVideoPlaying = false;
-            showControls();
-        });
-        
-        video.addEventListener('ended', function() {
-            isVideoPlaying = false;
-            nextMedia();
-        });
-        
+        const img = document.getElementById('player-img');
         img.addEventListener('load', function() {
             adjustPlayerHeight();
             ensurePlayerInViewport();
@@ -556,7 +475,7 @@
         
         window.addEventListener('beforeunload', savePlayerPosition);
     }
-
+    
     // 更新视频缓存进度
     function updateVideoBuffer() {
         const video = document.getElementById('player-video');
@@ -568,8 +487,8 @@
             buffer.style.width = bufferPercent + '%';
         }
     }
-
-    // 更新视频播放进度
+    
+    // 更新视频播放进度 - 优化进度条显示
     function updateVideoProgress() {
         const video = document.getElementById('player-video');
         const progress = document.getElementById('video-progress');
@@ -583,7 +502,7 @@
             timeDisplay.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
         }
     }
-
+    
     // 绑定按钮事件
     function bindButtonEvents() {
         const button = document.getElementById('media-control-btn');
@@ -596,7 +515,7 @@
         button.addEventListener('touchstart', startButtonDrag);
         button.addEventListener('touchstart', function(e) { e.preventDefault(); });
     }
-
+    
     // 开始拖动按钮
     function startButtonDrag(e) {
         e.preventDefault();
@@ -622,7 +541,7 @@
         button.style.cursor = 'grabbing';
         button.style.opacity = '0.8';
     }
-
+    
     // 按钮拖动中
     function onButtonDrag(e) {
         if (!isDraggingButton) return;
@@ -648,7 +567,7 @@
         button.style.right = 'auto';
         button.style.bottom = 'auto';
     }
-
+    
     // 停止拖动按钮
     function stopButtonDrag() {
         isDraggingButton = false;
@@ -667,10 +586,10 @@
         document.removeEventListener('touchmove', onButtonDrag);
         document.removeEventListener('touchend', stopButtonDrag);
     }
-
+    
     // 开始拖动播放器
     function startPlayerDrag(e) {
-        if (e.target.id === 'video-progress' || e.target.classList.contains('video-progress-container')) return;
+        if (e.target.id === 'video-progress') return;
         
         e.preventDefault();
         isDraggingPlayer = true;
@@ -693,7 +612,7 @@
         
         player.style.cursor = 'grabbing';
     }
-
+    
     // 播放器拖动中
     function onPlayerDrag(e) {
         if (!isDraggingPlayer) return;
@@ -716,7 +635,7 @@
         player.style.top = y + 'px';
         player.style.transform = 'none';
     }
-
+    
     // 停止拖动播放器
     function stopPlayerDrag() {
         isDraggingPlayer = false;
@@ -729,7 +648,7 @@
         document.removeEventListener('touchmove', onPlayerDrag);
         document.removeEventListener('touchend', stopPlayerDrag);
     }
-
+    
     // 确保播放器在视口内
     function ensurePlayerInViewport() {
         const player = document.getElementById('minimal-player');
@@ -752,7 +671,7 @@
         player.style.transform = 'none';
         savePlayerPosition();
     }
-
+    
     // 调整播放器高度
     function adjustPlayerHeight() {
         const player = document.getElementById('minimal-player');
@@ -777,8 +696,8 @@
             }
         }
     }
-
-    // 更新媒体透明度
+    
+    // 更新媒体透明度 - 优化控制条透明度变化
     function updateMediaOpacity() {
         const img = document.getElementById('player-img');
         const video = document.getElementById('player-video');
@@ -790,10 +709,13 @@
         if (img) img.style.opacity = config.playerOpacity;
         if (video) video.style.opacity = config.playerOpacity;
         
+        // 优化控制条透明度：使用更明显的颜色对比
         if (videoControls) {
             const baseOpacity = config.controlsOpacity;
+            // 控制条背景使用更高的对比度
             videoControls.style.background = `rgba(0,0,0,${Math.min(baseOpacity + 0.3, 0.95)})`;
             
+            // 进度条颜色根据透明度调整对比度
             const buffer = document.getElementById('video-buffer');
             const played = document.getElementById('video-played');
             if (buffer) buffer.style.background = `rgba(255,255,255,${baseOpacity * 0.4})`;
@@ -804,7 +726,7 @@
         
         if (timeDisplay) timeDisplay.style.opacity = config.controlsOpacity;
     }
-
+    
     // 播放器控制函数
     function togglePlayer() {
         isPlayerVisible = !isPlayerVisible;
@@ -822,21 +744,17 @@
             btn.innerHTML = '🎵';
             btn.title = '开始播放';
             stopPlayback();
-            if (controlsHideTimer) {
-                clearTimeout(controlsHideTimer);
-                controlsHideTimer = null;
-            }
         }
         savePlayerPosition();
     }
-
+    
     function startPlayback() {
         if (config.mediaUrls.length === 0) return;
         currentIndex = config.playMode === 'random' ? 
             Math.floor(Math.random() * config.mediaUrls.length) : 0;
         loadCurrentMedia();
     }
-
+    
     function stopPlayback() {
         if (slideTimer) {
             clearInterval(slideTimer);
@@ -846,17 +764,12 @@
         if (video) {
             video.pause();
             video.currentTime = 0;
-            isVideoPlaying = false;
         }
         document.getElementById('player-img').style.display = 'none';
         document.getElementById('player-video').style.display = 'none';
-        const videoControls = document.getElementById('video-controls');
-        if (videoControls) {
-            videoControls.style.display = 'none';
-            videoControls.classList.add('hidden');
-        }
+        document.getElementById('video-controls').style.display = 'none';
     }
-
+    
     function loadCurrentMedia() {
         if (config.mediaUrls.length === 0) return;
         const url = config.mediaUrls[currentIndex];
@@ -877,10 +790,7 @@
         
         img.style.display = 'none';
         video.style.display = 'none';
-        if (videoControls) {
-            videoControls.style.display = 'none';
-            videoControls.classList.add('hidden');
-        }
+        videoControls.style.display = 'none';
         
         if (slideTimer) {
             clearInterval(slideTimer);
@@ -890,17 +800,13 @@
         if (isVideo) {
             video.src = url;
             video.style.display = 'block';
-            if (videoControls) {
-                videoControls.style.display = 'flex';
-                videoControls.classList.remove('hidden');
-            }
+            videoControls.style.display = 'flex';
             if (config.videoMuted) video.muted = true;
             video.play().catch(e => {
                 console.log('视频播放失败:', e);
                 urlValidationCache.set(url, false);
                 setTimeout(nextMedia, 1000);
             });
-            showControls();
         } else {
             img.src = url;
             img.style.display = 'block';
@@ -910,16 +816,12 @@
                 nextMedia();
             };
             slideTimer = setInterval(nextMedia, config.slideInterval);
-            if (videoControls) {
-                videoControls.style.display = 'none';
-                videoControls.classList.add('hidden');
-            }
         }
         
         updateMediaOpacity();
         setTimeout(adjustPlayerHeight, 100);
     }
-
+    
     function nextMedia() {
         if (config.mediaUrls.length === 0) return;
         currentIndex = config.playMode === 'random' ? 
@@ -927,21 +829,21 @@
             (currentIndex + 1) % config.mediaUrls.length;
         loadCurrentMedia();
     }
-
+    
     function formatTime(seconds) {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
-
+    
     function isVideoUrl(url) {
         return /\.(mp4|webm|ogg|mov|avi)/i.test(url);
     }
-
+    
     function isImageUrl(url) {
         return /\.(jpg|jpeg|png|gif|webp|bmp)/i.test(url);
     }
-
+    
     // URL验证函数
     async function validateUrl(url) {
         if (urlValidationCache.has(url)) return urlValidationCache.get(url);
@@ -986,7 +888,7 @@
             }
         });
     }
-
+    
     // 验证所有URL
     async function validateAllUrls() {
         const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
@@ -1023,7 +925,7 @@
             }
         };
     }
-
+    
     // 清除无效URL
     function removeInvalidUrls() {
         const invalidUrls = [];
@@ -1041,7 +943,7 @@
         saveConfig();
         return invalidUrls.length;
     }
-
+    
     // 导出URL列表
     function exportUrls() {
         const urlsText = config.mediaUrls.join('\n');
@@ -1053,7 +955,7 @@
         a.click();
         URL.revokeObjectURL(url);
     }
-
+    
     // 从文本导入URL列表
     function importFromText(text, mode) {
         const newUrls = text.split('\n')
@@ -1070,7 +972,7 @@
         saveConfig();
         return newUrls.length;
     }
-
+    
     // 配置管理
     function loadConfig() {
         try {
@@ -1080,7 +982,7 @@
             console.warn('加载配置失败，使用默认配置');
         }
     }
-
+    
     function saveConfig() {
         try {
             localStorage.setItem('minimal_media_config', JSON.stringify(config));
@@ -1088,14 +990,12 @@
             console.error('保存配置失败');
         }
     }
-
+    
     // 创建设置面板
     function createSettingsPanel() {
-        // 直接插入设置面板，不等待
         const extensionsArea = document.getElementById('extensions_settings');
         if (!extensionsArea) {
-            console.log('扩展设置区域未找到，稍后重试');
-            setTimeout(createSettingsPanel, 1000);
+            setTimeout(createSettingsPanel, 100);
             return;
         }
         
@@ -1109,7 +1009,7 @@
         const html = `
             <div class="list-group-item" id="media-player-settings">
                 <h5>🎵 媒体播放器 v${PLUGIN_VERSION}</h5>
-                <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功</p>
+                <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功 - 双击播放器切换下一个</p>
                 
                 <div class="form-group">
                     <label><input type="checkbox" id="mp-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
@@ -1118,10 +1018,10 @@
                 <div class="form-group">
                     <label>按钮位置:</label>
                     <select class="form-control" id="mp-button-position">
-                        <option value="bottom-right" ${config.buttonPosition === 'bottom-right' ? 'selected' : ''}>右下角</option>
+                                                <option value="bottom-right" ${config.buttonPosition === 'bottom-right' ? 'selected' : ''}>右下角</option>
                         <option value="bottom-left" ${config.buttonPosition === 'bottom-left' ? 'selected' : ''}>左下角</option>
                         <option value="top-right" ${config.buttonPosition === 'top-right' ? 'selected' : ''}>右上角</option>
-                                        <option value="top-left" ${config.buttonPosition === 'top-left' ? 'selected' : ''}>左上角</option>
+                        <option value="top-left" ${config.buttonPosition === 'top-left' ? 'selected' : ''}>左上角</option>
                     </select>
                 </div>
                 
@@ -1207,6 +1107,7 @@
                         <button class="btn btn-sm btn-success" id="mp-export-urls">导出URL</button>
                     </div>
                     
+                    <!-- 改为输入框导入 -->
                     <div class="mt-2">
                         <label>批量导入URL:</label>
                         <textarea class="form-control" id="mp-import-text" rows="3" placeholder="粘贴URL列表，每行一个URL，自动去重" style="font-size: 12px;"></textarea>
@@ -1231,144 +1132,303 @@
         extensionsArea.insertAdjacentHTML('beforeend', html);
         bindSettingsEvents();
     }
-
-    // 绑定设置事件
+    
     function bindSettingsEvents() {
         // 启用开关
-        const enabledCheckbox = document.getElementById('mp-enabled');
-        if (enabledCheckbox) {
-            enabledCheckbox.addEventListener('change', function() {
-                config.enabled = this.checked;
-                const btn = document.getElementById('media-control-btn');
-                if (btn) btn.style.display = this.checked ? 'flex' : 'none';
-                if (!this.checked && isPlayerVisible) togglePlayer();
-                saveConfig();
-                showStatus('设置已更新');
-            });
-        }
+        $('#mp-enabled').on('change', function() {
+            config.enabled = this.checked;
+            document.getElementById('media-control-btn').style.display = this.checked ? 'flex' : 'none';
+            if (!this.checked && isPlayerVisible) togglePlayer();
+            saveConfig();
+            showStatus('设置已更新');
+        });
         
         // 按钮位置
-        const buttonPositionSelect = document.getElementById('mp-button-position');
-        if (buttonPositionSelect) {
-            buttonPositionSelect.addEventListener('change', function() {
-                config.buttonPosition = this.value;
-                localStorage.removeItem('media_button_position');
-                createPlayer();
-                saveConfig();
-                showStatus('按钮位置已更新');
-            });
-        }
+        $('#mp-button-position').on('change', function() {
+            config.buttonPosition = this.value;
+            localStorage.removeItem('media_button_position');
+            createPlayer();
+            saveConfig();
+            showStatus('按钮位置已更新');
+        });
         
         // 播放器透明度
-        const opacitySlider = document.getElementById('mp-opacity');
-        const opacityInput = document.getElementById('mp-opacity-input');
-        const opacityValue = document.getElementById('opacity-value');
+        $('#mp-opacity').on('input', function() {
+            const value = parseInt(this.value);
+            $('#mp-opacity-input').val(value);
+            $('#opacity-value').text(value + '%');
+            config.playerOpacity = value / 100;
+            updateMediaOpacity();
+            saveConfig();
+        });
         
-        if (opacitySlider && opacityInput && opacityValue) {
-            opacitySlider.addEventListener('input', function() {
-                const value = parseInt(this.value);
-                opacityInput.value = value;
-                opacityValue.textContent = value + '%';
-                config.playerOpacity = value / 100;
-                updateMediaOpacity();
-                saveConfig();
-            });
+        $('#mp-opacity-input').on('input', function() {
+            let value = parseInt(this.value) || 95;
+            value = Math.max(10, Math.min(100, value));
+            $('#mp-opacity').val(value);
+            $('#opacity-value').text(value + '%');
+            config.playerOpacity = value / 100;
+            updateMediaOpacity();
+            saveConfig();
+        });
+        
+        // 控制条透明度 - 优化透明度变化效果
+        $('#mp-controls-opacity').on('input', function() {
+            const value = parseInt(this.value);
+            $('#mp-controls-opacity-input').val(value);
+            $('#controls-opacity-value').text(value + '%');
+            config.controlsOpacity = value / 100;
+            updateMediaOpacity();
+            saveConfig();
+        });
+        
+        $('#mp-controls-opacity-input').on('input', function() {
+            let value = parseInt(this.value) || 90;
+            value = Math.max(10, Math.min(100, value));
+            $('#mp-controls-opacity').val(value);
+            $('#controls-opacity-value').text(value + '%');
+            config.controlsOpacity = value / 100;
+            updateMediaOpacity();
+            saveConfig();
+        });
+        
+        // 宽度滑块和输入框联动
+        $('#mp-width').on('input', function() {
+            const value = parseInt(this.value);
+            $('#mp-width-input').val(value);
+            $('#width-value').text(value + 'px');
+            config.playerWidth = value;
+            const player = document.getElementById('minimal-player');
+            if (player) {
+                player.style.width = value + 'px';
+                adjustPlayerHeight();
+                ensurePlayerInViewport();
+            }
+            saveConfig();
+        });
+        
+        $('#mp-width-input').on('input', function() {
+            let value = parseInt(this.value) || 300;
+            value = Math.max(200, Math.min(800, value));
+            $('#mp-width').val(value);
+            $('#width-value').text(value + 'px');
+            config.playerWidth = value;
+            const player = document.getElementById('minimal-player');
+            if (player) {
+                player.style.width = value + 'px';
+                adjustPlayerHeight();
+                ensurePlayerInViewport();
+            }
+            saveConfig();
+        });
+        
+        // 间隔滑块和输入框联动
+        $('#mp-interval').on('input', function() {
+            const value = parseInt(this.value);
+            $('#mp-interval-input').val(value);
+            $('#interval-value').text(value + 'ms');
+            config.slideInterval = value;
+            if (slideTimer) {
+                clearInterval(slideTimer);
+                slideTimer = setInterval(nextMedia, config.slideInterval);
+            }
+            saveConfig();
+        });
+        
+        $('#mp-interval-input').on('input', function() {
+            let value = parseInt(this.value) || 3000;
+            value = Math.max(500, Math.min(10000, value));
+            $('#mp-interval').val(value);
+            $('#interval-value').text(value + 'ms');
+            config.slideInterval = value;
+            if (slideTimer) {
+                clearInterval(slideTimer);
+                slideTimer = setInterval(nextMedia, config.slideInterval);
+            }
+            saveConfig();
+        });
+        
+        // 其他设置
+        $('#mp-media-type').on('change', function() {
+            config.mediaType = this.value;
+            saveConfig();
+            showStatus('媒体类型已更新');
+        });
+        
+        $('#mp-play-mode').on('change', function() {
+            config.playMode = this.value;
+            saveConfig();
+            showStatus('播放模式已更新');
+        });
+        
+        $('#mp-muted').on('change', function() {
+            config.videoMuted = this.checked;
+            saveConfig();
+            showStatus('静音设置已更新');
+        });
+        
+        // URL选项卡切换
+        $('.url-tab').on('click', function() {
+            const tab = $(this).data('tab');
+            $('.url-tab').removeClass('active');
+            $(this).addClass('active');
+            $('.url-tab-content').removeClass('active');
+            $(`#tab-${tab}`).addClass('active');
+        });
+        
+        // URL列表输入
+        $('#mp-urls, #mp-urls-images, #mp-urls-videos').on('input', function() {
+            const allUrls = $('#mp-urls').val().split('\n').filter(url => url.trim());
+            const imageUrls = $('#mp-urls-images').val().split('\n').filter(url => url.trim());
+            const videoUrls = $('#mp-urls-videos').val().split('\n').filter(url => url.trim());
             
-            opacityInput.addEventListener('input', function() {
-                let value = parseInt(this.value) || 95;
-                value = Math.max(10, Math.min(100, value));
-                opacitySlider.value = value;
-                opacityValue.textContent = value + '%';
-                config.playerOpacity = value / 100;
-                updateMediaOpacity();
-                saveConfig();
-            });
-        }
-        
-        // 控制条透明度
-        const controlsOpacitySlider = document.getElementById('mp-controls-opacity');
-        const controlsOpacityInput = document.getElementById('mp-controls-opacity-input');
-        const controlsOpacityValue = document.getElementById('controls-opacity-value');
-        
-        if (controlsOpacitySlider && controlsOpacityInput && controlsOpacityValue) {
-            controlsOpacitySlider.addEventListener('input', function() {
-                const value = parseInt(this.value);
-                controlsOpacityInput.value = value;
-                controlsOpacityValue.textContent = value + '%';
-                config.controlsOpacity = value / 100;
-                updateMediaOpacity();
-                saveConfig();
-            });
+            // 合并所有URL，去重
+            const mergedUrls = [...new Set([...allUrls, ...imageUrls, ...videoUrls])].filter(url => url);
+            config.mediaUrls = mergedUrls;
+            saveConfig();
             
-            controlsOpacityInput.addEventListener('input', function() {
-                let value = parseInt(this.value) || 90;
-                value = Math.max(10, Math.min(100, value));
-                controlsOpacitySlider.value = value;
-                controlsOpacityValue.textContent = value + '%';
-                config.controlsOpacity = value / 100;
-                updateMediaOpacity();
-                saveConfig();
-            });
-        }
+            // 更新统计信息
+            updateUrlStats();
+        });
         
-        // 播放器宽度
-        const widthSlider = document.getElementById('mp-width');
-        const widthInput = document.getElementById('mp-width-input');
-        const widthValue = document.getElementById('width-value');
-        
-        if (widthSlider && widthInput && widthValue) {
-            widthSlider.addEventListener('input', function() {
-                const value = parseInt(this.value);
-                widthInput.value = value;
-                widthValue.textContent = value + 'px';
-                config.playerWidth = value;
-                const player = document.getElementById('minimal-player');
-                if (player) {
-                    player.style.width = value + 'px';
-                    adjustPlayerHeight();
-                    ensurePlayerInViewport();
-                }
-                saveConfig();
-            });
+        // 检测URL
+        $('#mp-validate-urls').on('click', async function() {
+            const button = $(this);
+            button.prop('disabled', true).text('检测中...');
             
-            widthInput.addEventListener('input', function() {
-                let value = parseInt(this.value) || 300;
-                value = Math.max(200, Math.min(800, value));
-                widthSlider.value = value;
-                widthValue.textContent = value + 'px';
-                config.playerWidth = value;
-                const player = document.getElementById('minimal-player');
-                if (player) {
-                    player.style.width = value + 'px';
-                    adjustPlayerHeight();
-                    ensurePlayerInViewport();
-                }
-                saveConfig();
-            });
-        }
+            try {
+                const stats = await validateAllUrls();
+                const statsEl = $('#validation-stats');
+                
+                let statsHtml = `
+                    <div>图片: <span class="url-status-valid">${stats.images.valid}正常</span> / <span class="url-status-invalid">${stats.images.invalid}失效</span></div>
+                    <div>视频: <span class="url-status-valid">${stats.videos.valid}正常</span> / <span class="url-status-invalid">${stats.videos.invalid}失效</span></div>
+                    <div>总计: <span class="url-status-valid">${stats.total.valid}正常</span> / <span class="url-status-invalid">${stats.total.invalid}失效</span></div>
+                `;
+                
+                statsEl.html(statsHtml);
+                showStatus('✅ URL检测完成');
+            } catch (error) {
+                showStatus('❌ URL检测失败: ' + error.message, 'error');
+            } finally {
+                button.prop('disabled', false).text('检测URL');
+            }
+        });
         
-        // 其他设置事件绑定...
-        // 这里省略其他设置事件绑定代码以保持简洁
+        // 清除失效URL
+        $('#mp-clear-invalid').on('click', function() {
+            const removedCount = removeInvalidUrls();
+            if (removedCount > 0) {
+                // 更新所有URL文本框
+                $('#mp-urls').val(config.mediaUrls.join('\n'));
+                
+                // 更新分类URL文本框
+                const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+                const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+                $('#mp-urls-images').val(imageUrls.join('\n'));
+                $('#mp-urls-videos').val(videoUrls.join('\n'));
+                
+                updateUrlStats();
+                showStatus(`✅ 已清除 ${removedCount} 个失效URL`);
+            } else {
+                showStatus('没有发现失效的URL');
+            }
+        });
         
-        // 保存按钮
-        const saveButton = document.getElementById('mp-save');
-        if (saveButton) {
-            saveButton.addEventListener('click', function() {
-                saveConfig();
-                showStatus('✅ 所有设置已保存');
-            });
-        }
+        // 导出URL
+        $('#mp-export-urls').on('click', function() {
+            exportUrls();
+            showStatus('✅ URL列表已导出');
+        });
         
-        // 测试按钮
-        const testButton = document.getElementById('mp-test');
-        if (testButton) {
-            testButton.addEventListener('click', function() {
-                if (!isPlayerVisible) togglePlayer();
-                showStatus('🎵 播放器测试中...');
-            });
-        }
+        // 输入框导入URL
+        $('#mp-import-append').on('click', function() {
+            const importText = $('#mp-import-text').val().trim();
+            if (!importText) {
+                showStatus('请输入要导入的URL', 'error');
+                return;
+            }
+            
+            const importedCount = importFromText(importText, 'append');
+            
+            // 更新所有URL文本框
+            $('#mp-urls').val(config.mediaUrls.join('\n'));
+            
+            // 更新分类URL文本框
+            const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+            const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+            $('#mp-urls-images').val(imageUrls.join('\n'));
+            $('#mp-urls-videos').val(videoUrls.join('\n'));
+            
+            updateUrlStats();
+            $('#mp-import-text').val(''); // 清空输入框
+            showStatus(`✅ 已追加导入 ${importedCount} 个URL（自动去重）`);
+        });
+        
+        $('#mp-import-replace').on('click', function() {
+            const importText = $('#mp-import-text').val().trim();
+            if (!importText) {
+                showStatus('请输入要导入的URL', 'error');
+                return;
+            }
+            
+            if (!confirm('确定要覆盖现有的URL列表吗？此操作不可撤销。')) {
+                return;
+            }
+            
+            const importedCount = importFromText(importText, 'replace');
+            
+            // 更新所有URL文本框
+            $('#mp-urls').val(config.mediaUrls.join('\n'));
+            
+            // 更新分类URL文本框
+            const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+            const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+            $('#mp-urls-images').val(imageUrls.join('\n'));
+            $('#mp-urls-videos').val(videoUrls.join('\n'));
+            
+            updateUrlStats();
+            $('#mp-import-text').val(''); // 清空输入框
+            showStatus(`✅ 已覆盖导入 ${importedCount} 个URL（自动去重）`);
+        });
+        
+        // 重置播放器位置
+        $('#mp-reset-player-pos').on('click', function() {
+            localStorage.removeItem('media_player_position');
+            createPlayer();
+            showStatus('✅ 播放器位置已重置到中心');
+        });
+        
+        $('#mp-save').on('click', function() {
+            saveConfig();
+            showStatus('✅ 所有设置已保存');
+        });
+        
+        $('#mp-test').on('click', function() {
+            if (!isPlayerVisible) togglePlayer();
+            showStatus('🎵 播放器测试中...');
+        });
+        
+        $('#mp-reset-btn').on('click', function() {
+            localStorage.removeItem('media_button_position');
+            createPlayer();
+            showStatus('✅ 按钮位置已重置');
+        });
     }
-
+    
+    // 更新URL统计信息
+    function updateUrlStats() {
+        const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+        const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+        const otherUrls = config.mediaUrls.filter(url => !isImageUrl(url) && !isVideoUrl(url));
+        
+        $('#url-stats').html(`
+            <div>总计: ${config.mediaUrls.length}个URL</div>
+            <div>图片: ${imageUrls.length}个 | 视频: ${videoUrls.length}个 | 其他: ${otherUrls.length}个</div>
+            <div id="validation-stats">点击"检测URL"验证可用性</div>
+        `);
+    }
+    
     function showStatus(message, type = 'success') {
         const statusEl = document.getElementById('mp-status');
         if (statusEl) {
@@ -1377,26 +1437,24 @@
             setTimeout(() => statusEl.textContent = '', 3000);
         }
     }
-
+    
     // 初始化
     function initialize() {
-        console.log('🔧 初始化媒体播放器...');
+        console.log('🔧 初始化优化版播放器...');
         
         // 首先加载CSS
         loadCSS();
         
         loadConfig();
         createPlayer();
-        
-        // 延迟创建设置面板
-        setTimeout(createSettingsPanel, 100);
+        createSettingsPanel();
         
         // 窗口大小变化时重新定位
         window.addEventListener('resize', function() {
             createPlayer();
         });
         
-        console.log('✅ 媒体播放器初始化完成');
+        console.log('✅ 优化版播放器初始化完成');
     }
     
     // 启动
