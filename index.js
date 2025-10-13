@@ -1,9 +1,9 @@
-// index.js - 修复控制条交互版本
+// index.js - 修复控制条逻辑版本
 (function() {
-    console.log('🎵 修复控制条交互版本加载...');
+    console.log('🎵 修复控制条逻辑版本加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.3.0';
+    const PLUGIN_VERSION = '2.4.0';
     
     // 配置
     let config = {
@@ -31,7 +31,7 @@
     let buttonDragOffset = { x: 0, y: 0 };
     let urlValidationCache = new Map();
     let controlsHideTimer = null;
-    let isMouseOverControls = false;
+    let isVideoPlaying = false;
     
     // 首先加载CSS
     function loadCSS() {
@@ -73,7 +73,7 @@
                 display: none;
             }
             
-            /* 视频控制条样式 - 修复进度条交互 */
+            /* 视频控制条样式 */
             #video-controls {
                 position: absolute;
                 bottom: 0;
@@ -83,7 +83,7 @@
                 display: none;
                 background: rgba(0,0,0,0.8);
                 box-sizing: border-box;
-                transition: all 0.3s ease;
+                transition: opacity 0.3s ease;
                 opacity: 1;
             }
             
@@ -146,7 +146,7 @@
                 position: relative;
                 z-index: 3;
                 margin: 0;
-                opacity: 0; /* 隐藏但保持功能 */
+                opacity: 0;
             }
             
             #video-progress::-webkit-slider-thumb {
@@ -158,12 +158,6 @@
                 cursor: pointer;
                 border: 2px solid #764ba2;
                 box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                transition: all 0.2s ease;
-            }
-            
-            #video-progress::-webkit-slider-thumb:hover {
-                transform: scale(1.2);
-                background: #f0f0f0;
             }
             
             #video-progress::-webkit-slider-runnable-track {
@@ -214,12 +208,6 @@
                 box-shadow: 0 4px 15px rgba(0,0,0,0.2);
                 user-select: none;
                 touch-action: none;
-                transition: all 0.3s ease;
-            }
-            
-            #media-control-btn:hover {
-                transform: scale(1.1);
-                box-shadow: 0 6px 20px rgba(0,0,0,0.3);
             }
             
             #media-control-btn:active {
@@ -338,22 +326,22 @@
         document.head.appendChild(style);
     }
     
-    // 显示控制条
+    // 显示控制条（仅视频时使用）
     function showControls() {
         const videoControls = document.getElementById('video-controls');
-        if (videoControls && !videoControls.classList.contains('hidden')) {
+        const video = document.getElementById('player-video');
+        
+        // 只有视频播放时才显示控制条
+        if (video && video.style.display !== 'none' && videoControls) {
             videoControls.classList.remove('hidden');
             videoControls.style.display = 'flex';
-        }
-        
-        // 清除之前的隐藏计时器
-        if (controlsHideTimer) {
-            clearTimeout(controlsHideTimer);
-            controlsHideTimer = null;
-        }
-        
-        // 如果不是在控制条上，3秒后隐藏
-        if (!isMouseOverControls) {
+            
+            // 清除之前的隐藏计时器
+            if (controlsHideTimer) {
+                clearTimeout(controlsHideTimer);
+            }
+            
+            // 3秒后隐藏控制条
             controlsHideTimer = setTimeout(hideControls, 3000);
         }
     }
@@ -363,7 +351,6 @@
         const videoControls = document.getElementById('video-controls');
         if (videoControls) {
             videoControls.classList.add('hidden');
-            // 延迟设置display为none，确保过渡动画完成
             setTimeout(() => {
                 if (videoControls.classList.contains('hidden')) {
                     videoControls.style.display = 'none';
@@ -482,8 +469,8 @@
     function bindPlayerEvents() {
         const player = document.getElementById('minimal-player');
         const video = document.getElementById('player-video');
+        const img = document.getElementById('player-img');
         const progress = document.getElementById('video-progress');
-        const videoControls = document.getElementById('video-controls');
         const progressContainer = document.querySelector('.video-progress-container');
         
         // 双击切换下一个媒体
@@ -493,45 +480,37 @@
             }
         });
         
-        // 点击视频区域显示控制条
-        player.addEventListener('click', function(e) {
-            if (e.target.id === 'player-video' || e.target.id === 'player-img') {
-                showControls();
-            }
-        });
-        
-        // 鼠标进入控制条区域
-        if (videoControls) {
-            videoControls.addEventListener('mouseenter', function() {
-                isMouseOverControls = true;
-                showControls();
-            });
-            
-            videoControls.addEventListener('mouseleave', function() {
-                isMouseOverControls = false;
-                // 离开控制条后3秒隐藏
-                controlsHideTimer = setTimeout(hideControls, 3000);
-            });
-        }
-        
-        // 鼠标进入播放器区域
-        player.addEventListener('mouseenter', function() {
+        // 单击视频显示控制条（图片不显示）
+        video.addEventListener('click', function(e) {
+            e.stopPropagation();
             showControls();
         });
         
-        player.addEventListener('mouseleave', function() {
-            if (!isMouseOverControls) {
-                controlsHideTimer = setTimeout(hideControls, 1000);
+        // 单击图片不显示控制条
+        img.addEventListener('click', function(e) {
+            e.stopPropagation();
+            // 图片不显示控制条，直接切换下一个
+            nextMedia();
+        });
+        
+        // 点击播放器其他区域（非视频/图片）不触发控制条显示
+        player.addEventListener('click', function(e) {
+            if (e.target === player) {
+                // 点击播放器背景，如果是视频则显示控制条，图片则不显示
+                if (video.style.display !== 'none') {
+                    showControls();
+                }
             }
         });
         
         player.addEventListener('mousedown', startPlayerDrag);
         player.addEventListener('touchstart', startPlayerDrag);
         
-        // 修复进度条拖动功能
+        // 进度条拖动功能
         progress.addEventListener('input', function() {
             if (video.duration) {
                 video.currentTime = (this.value / 100) * video.duration;
+                showControls(); // 拖动进度条时显示控制条
             }
         });
         
@@ -543,6 +522,7 @@
                 if (video.duration) {
                     video.currentTime = percent * video.duration;
                     updateVideoProgress();
+                    showControls(); // 点击进度条时显示控制条
                 }
             });
         }
@@ -559,16 +539,20 @@
         });
         
         video.addEventListener('play', function() {
-            showControls();
+            isVideoPlaying = true;
+            showControls(); // 开始播放时显示控制条
         });
         
         video.addEventListener('pause', function() {
-            showControls();
+            isVideoPlaying = false;
+            showControls(); // 暂停时显示控制条
         });
         
-        video.addEventListener('ended', nextMedia);
+        video.addEventListener('ended', function() {
+            isVideoPlaying = false;
+            nextMedia(); // 视频结束时切换到下一个
+        });
         
-        const img = document.getElementById('player-img');
         img.addEventListener('load', function() {
             adjustPlayerHeight();
             ensurePlayerInViewport();
@@ -837,7 +821,6 @@
             btn.title = '停止播放';
             startPlayback();
             ensurePlayerInViewport();
-            showControls(); // 显示播放器时显示控制条
         } else {
             player.style.display = 'none';
             btn.innerHTML = '🎵';
@@ -868,6 +851,7 @@
         if (video) {
             video.pause();
             video.currentTime = 0;
+            isVideoPlaying = false;
         }
         document.getElementById('player-img').style.display = 'none';
         document.getElementById('player-video').style.display = 'none';
@@ -921,6 +905,8 @@
                 urlValidationCache.set(url, false);
                 setTimeout(nextMedia, 1000);
             });
+            // 视频加载时显示控制条
+            showControls();
         } else {
             img.src = url;
             img.style.display = 'block';
@@ -930,6 +916,11 @@
                 nextMedia();
             };
             slideTimer = setInterval(nextMedia, config.slideInterval);
+            // 图片不显示控制条
+            if (videoControls) {
+                videoControls.style.display = 'none';
+                videoControls.classList.add('hidden');
+            }
         }
         
         updateMediaOpacity();
@@ -1105,7 +1096,7 @@
         }
     }
     
-    // 创建设置面板（此处省略重复代码，保持与之前相同）
+    // 创建设置面板（省略重复代码）
     function createSettingsPanel() {
         // ... 设置面板代码保持不变 ...
     }
@@ -1138,7 +1129,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化修复控制条交互版本...');
+        console.log('🔧 初始化修复控制条逻辑版本...');
         
         // 首先加载CSS
         loadCSS();
@@ -1152,7 +1143,7 @@
             createPlayer();
         });
         
-        console.log('✅ 修复控制条交互版本初始化完成');
+        console.log('✅ 修复控制条逻辑版本初始化完成');
     }
     
     // 启动
