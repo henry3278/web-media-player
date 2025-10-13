@@ -1,9 +1,9 @@
-// index.js - 控制条优化版媒体播放器
+// index.js - 修复控制条拖动版媒体播放器
 (function() {
-    console.log('🎵 控制条优化版媒体播放器加载...');
+    console.log('🎵 修复控制条拖动版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.3.0';
+    const PLUGIN_VERSION = '2.3.1';
     
     // 配置
     let config = {
@@ -32,6 +32,7 @@
     let urlValidationCache = new Map();
     let controlsHideTimer = null;
     let isVideoPlaying = false;
+    let isDraggingProgress = false;
     
     // 首先加载CSS
     function loadCSS() {
@@ -73,7 +74,7 @@
                 display: none;
             }
             
-            /* 视频控制条样式 - 优化显示逻辑 */
+            /* 视频控制条样式 - 修复拖动功能 */
             #video-controls {
                 position: absolute;
                 bottom: 0;
@@ -85,6 +86,7 @@
                 box-sizing: border-box;
                 transition: all 0.3s ease;
                 opacity: 0;
+                z-index: 10;
             }
             
             #video-controls.show {
@@ -106,6 +108,7 @@
                 background: rgba(255,255,255,0.15);
                 border-radius: 4px;
                 overflow: hidden;
+                cursor: pointer;
             }
             
             #video-buffer {
@@ -142,9 +145,34 @@
                 border-radius: 4px;
                 outline: none;
                 cursor: pointer;
-                position: relative;
+                position: absolute;
+                top: 0;
+                left: 0;
                 z-index: 3;
                 margin: 0;
+                opacity: 0; /* 隐藏原生滑块，使用自定义样式 */
+            }
+            
+            /* 自定义滑块样式 */
+            .custom-slider-thumb {
+                position: absolute;
+                top: 50%;
+                left: 0;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background: #ffffff;
+                border: 2px solid #764ba2;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                transform: translate(-50%, -50%);
+                pointer-events: none;
+                z-index: 4;
+                transition: all 0.2s ease;
+            }
+            
+            .custom-slider-thumb.dragging {
+                transform: translate(-50%, -50%) scale(1.2);
+                background: #f0f0f0;
             }
             
             #video-progress::-webkit-slider-thumb {
@@ -315,6 +343,11 @@
                     height: 20px;
                 }
                 
+                .custom-slider-thumb {
+                    width: 20px;
+                    height: 20px;
+                }
+                
                 #video-time {
                     font-size: 11px;
                     min-width: 80px;
@@ -381,7 +414,7 @@
             playerStyle += 'top: 50%; left: 50%; transform: translate(-50%, -50%);';
         }
         
-        // 创建播放器HTML
+        // 创建播放器HTML - 修复进度条结构
         const playerHTML = `
             <div id="minimal-player" style="${playerStyle}">
                 <div id="player-content">
@@ -394,7 +427,8 @@
                         <div class="video-progress-container">
                             <div id="video-buffer"></div>
                             <div id="video-played"></div>
-                            <input type="range" id="video-progress" min="0" max="100" value="0">
+                            <input type="range" id="video-progress" min="0" max="100" value="0" step="0.1">
+                            <div class="custom-slider-thumb"></div>
                         </div>
                         <span id="video-time">0:00 / 0:00</span>
                     </div>
@@ -469,38 +503,53 @@
         }
     }
     
-    // 绑定播放器事件
+    // 绑定播放器事件 - 修复进度条拖动功能
     function bindPlayerEvents() {
         const player = document.getElementById('minimal-player');
         const video = document.getElementById('player-video');
         const progress = document.getElementById('video-progress');
         const content = document.getElementById('player-content');
+        const progressContainer = document.querySelector('.video-progress-container');
+        const customThumb = document.querySelector('.custom-slider-thumb');
         
         // 双击切换下一个媒体（显示控制条）
         player.addEventListener('dblclick', function(e) {
-            if (e.target.id !== 'video-progress') {
-                showControls(); // 双击时显示控制条
+            if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb')) {
+                showControls();
                 nextMedia();
             }
         });
         
         // 单击视频区域显示控制条
         content.addEventListener('click', function(e) {
-            if (e.target.id !== 'video-progress' && isVideoPlaying) {
-                showControls(); // 单击时显示控制条
+            if (e.target.id !== 'video-progress' && !e.target.classList.contains('custom-slider-thumb') && isVideoPlaying) {
+                showControls();
             }
         });
         
         player.addEventListener('mousedown', startPlayerDrag);
         player.addEventListener('touchstart', startPlayerDrag);
         
-        // 视频控制
+        // 修复进度条拖动功能
         progress.addEventListener('input', function() {
             if (video.duration) {
                 video.currentTime = (this.value / 100) * video.duration;
-                showControls(); // 拖动进度条时显示控制条
+                showControls();
+                updateCustomThumbPosition();
             }
         });
+        
+        progress.addEventListener('change', function() {
+            if (video.duration) {
+                video.currentTime = (this.value / 100) * video.duration;
+                showControls();
+                updateCustomThumbPosition();
+            }
+        });
+        
+        // 自定义进度条拖动
+        progressContainer.addEventListener('mousedown', startProgressDrag);
+        progressContainer.addEventListener('touchstart', startProgressDrag);
         
         // 视频事件
         video.addEventListener('timeupdate', updateVideoProgress);
@@ -511,21 +560,22 @@
             updateVideoBuffer();
             adjustPlayerHeight();
             ensurePlayerInViewport();
+            updateCustomThumbPosition();
         });
         
         video.addEventListener('play', function() {
             isVideoPlaying = true;
-            showControls(); // 开始播放时显示控制条
+            showControls();
         });
         
         video.addEventListener('pause', function() {
             isVideoPlaying = false;
-            hideControls(); // 暂停时隐藏控制条
+            hideControls();
         });
         
         video.addEventListener('ended', function() {
             isVideoPlaying = false;
-            hideControls(); // 播放结束时隐藏控制条
+            hideControls();
             nextMedia();
         });
         
@@ -536,6 +586,83 @@
         });
         
         window.addEventListener('beforeunload', savePlayerPosition);
+    }
+    
+    // 开始拖动进度条
+    function startProgressDrag(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const progress = document.getElementById('video-progress');
+        const video = document.getElementById('player-video');
+        const customThumb = document.querySelector('.custom-slider-thumb');
+        
+        if (!video.duration) return;
+        
+        isDraggingProgress = true;
+        customThumb.classList.add('dragging');
+        
+        const rect = e.currentTarget.getBoundingClientRect();
+        const handleDrag = (clientX) => {
+            const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            progress.value = percent * 100;
+            video.currentTime = percent * video.duration;
+            updateCustomThumbPosition();
+            showControls();
+        };
+        
+        if (e.type === 'mousedown') {
+            handleDrag(e.clientX);
+            document.addEventListener('mousemove', onProgressDrag);
+            document.addEventListener('mouseup', stopProgressDrag);
+        } else {
+            const touch = e.touches[0];
+            handleDrag(touch.clientX);
+            document.addEventListener('touchmove', onProgressDrag);
+            document.addEventListener('touchend', stopProgressDrag);
+        }
+    }
+    
+    // 进度条拖动中
+    function onProgressDrag(e) {
+        if (!isDraggingProgress) return;
+        
+        const progressContainer = document.querySelector('.video-progress-container');
+        const rect = progressContainer.getBoundingClientRect();
+        const clientX = e.type === 'mousemove' ? e.clientX : e.touches[0].clientX;
+        
+        const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const progress = document.getElementById('video-progress');
+        const video = document.getElementById('player-video');
+        
+        progress.value = percent * 100;
+        video.currentTime = percent * video.duration;
+        updateCustomThumbPosition();
+    }
+    
+    // 停止拖动进度条
+    function stopProgressDrag() {
+        isDraggingProgress = false;
+        const customThumb = document.querySelector('.custom-slider-thumb');
+        customThumb.classList.remove('dragging');
+        
+        document.removeEventListener('mousemove', onProgressDrag);
+        document.removeEventListener('mouseup', stopProgressDrag);
+        document.removeEventListener('touchmove', onProgressDrag);
+        document.removeEventListener('touchend', stopProgressDrag);
+    }
+    
+    // 更新自定义滑块位置
+    function updateCustomThumbPosition() {
+        const progress = document.getElementById('video-progress');
+        const customThumb = document.querySelector('.custom-slider-thumb');
+        const progressContainer = document.querySelector('.video-progress-container');
+        
+        if (progress && customThumb && progressContainer) {
+            const percent = progress.value / 100;
+            const containerWidth = progressContainer.offsetWidth;
+            customThumb.style.left = (percent * containerWidth) + 'px';
+        }
     }
     
     // 更新视频缓存进度
@@ -557,11 +684,12 @@
         const played = document.getElementById('video-played');
         const timeDisplay = document.getElementById('video-time');
         
-        if (video.duration > 0) {
+        if (video.duration > 0 && !isDraggingProgress) {
             const progressPercent = (video.currentTime / video.duration) * 100;
             progress.value = progressPercent;
             played.style.width = progressPercent + '%';
             timeDisplay.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+            updateCustomThumbPosition();
         }
     }
     
@@ -651,7 +779,7 @@
     
     // 开始拖动播放器
     function startPlayerDrag(e) {
-        if (e.target.id === 'video-progress') return;
+        if (e.target.id === 'video-progress' || e.target.classList.contains('custom-slider-thumb')) return;
         
         e.preventDefault();
         isDraggingPlayer = true;
@@ -827,9 +955,8 @@
         }
         document.getElementById('player-img').style.display = 'none';
         document.getElementById('player-video').style.display = 'none';
-        hideControls(); // 停止播放时隐藏控制条
+        hideControls();
         
-        // 清除控制条隐藏计时器
         if (controlsHideTimer) {
             clearTimeout(controlsHideTimer);
             controlsHideTimer = null;
@@ -883,7 +1010,7 @@
                 nextMedia();
             };
             slideTimer = setInterval(nextMedia, config.slideInterval);
-            hideControls(); // 图片播放时隐藏控制条
+            hideControls();
         }
         
         updateMediaOpacity();
@@ -896,7 +1023,7 @@
             Math.floor(Math.random() * config.mediaUrls.length) : 
             (currentIndex + 1) % config.mediaUrls.length;
         loadCurrentMedia();
-        showControls(); // 切换到新视频时显示控制条
+        showControls();
     }
     
     function formatTime(seconds) {
@@ -983,7 +1110,7 @@
             if (isValid) validOthers++; else invalidOthers++;
         }
         
-        return {
+               return {
             images: { valid: validImages, invalid: invalidImages, total: imageUrls.length },
             videos: { valid: validVideos, invalid: invalidVideos, total: videoUrls.length },
             others: { valid: validOthers, invalid: invalidOthers, total: otherUrls.length },
@@ -1080,6 +1207,7 @@
                 <h5>🎵 媒体播放器 v${PLUGIN_VERSION}</h5>
                 <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功 - 双击播放器切换下一个</p>
                 <p style="color: #666; font-size: 11px;">📝 控制条显示规则：单击/双击视频区域显示，3秒后自动隐藏</p>
+                <p style="color: #666; font-size: 11px;">🎛️ 进度条拖动：点击进度条任意位置或拖动滑块</p>
                 
                 <div class="form-group">
                     <label><input type="checkbox" id="mp-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
@@ -1095,7 +1223,7 @@
                     </select>
                 </div>
                 
-                                <div class="form-group">
+                <div class="form-group">
                     <label>播放器透明度: <span id="opacity-value">${Math.round(config.playerOpacity * 100)}%</span></label>
                     <input type="range" class="form-control-range" id="mp-opacity" min="10" max="100" value="${config.playerOpacity * 100}">
                     <input type="number" class="form-control mt-1" id="mp-opacity-input" min="10" max="100" value="${Math.round(config.playerOpacity * 100)}" style="width: 100px;">
@@ -1510,7 +1638,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化控制条优化版播放器...');
+        console.log('🔧 初始化修复控制条拖动版播放器...');
         
         // 首先加载CSS
         loadCSS();
@@ -1524,7 +1652,7 @@
             createPlayer();
         });
         
-        console.log('✅ 控制条优化版播放器初始化完成');
+        console.log('✅ 修复控制条拖动版播放器初始化完成');
     }
     
     // 启动
