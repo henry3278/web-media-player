@@ -3,5 +3,5 @@
     "author": "你的名字 & AI助手",
     "version": "7.0.5",
     "js": "index.js",
-    
+    "css": "style.css"
 }
