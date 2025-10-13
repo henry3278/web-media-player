@@ -1,9 +1,9 @@
-// 文件名: index.js - 最终修复版媒体播放器
+// 文件名: index.js - 最终完善版媒体播放器
 (function() {
-    console.log('🎵 最终修复版媒体播放器加载...');
+    console.log('🎵 最终完善版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '1.4.0';
+    const PLUGIN_VERSION = '1.5.0';
     
     // 配置
     let config = {
@@ -17,8 +17,8 @@
         slideInterval: 3000,
         videoMuted: true,
         playerWidth: 300,
-        playerOpacity: 0.95,  // 播放器透明度
-        buttonPosition: 'bottom-right'  // 按钮位置
+        playerOpacity: 0.95,
+        buttonPosition: 'bottom-right'
     };
     
     let currentIndex = 0;
@@ -28,6 +28,7 @@
     let playerDragOffset = { x: 0, y: 0 };
     let isDraggingButton = false;
     let buttonDragOffset = { x: 0, y: 0 };
+    let lastDoubleClickTime = 0;
     
     // 创建播放器
     function createPlayer() {
@@ -37,7 +38,7 @@
         if (existingPlayer) existingPlayer.remove();
         if (existingBtn) existingBtn.remove();
         
-        // 创建播放器（整个区域可拖动）
+        // 创建播放器
         const playerHTML = `
             <div id="minimal-player" style="
                 position: fixed;
@@ -67,33 +68,33 @@
                         max-height: 80vh;
                         object-fit: contain;
                         display: none;
+                        opacity: ${config.playerOpacity};
                     ">
                     <video id="player-video" style="
                         max-width: 100%;
                         max-height: 80vh;
                         object-fit: contain;
                         display: none;
+                        opacity: ${config.playerOpacity};
                     "></video>
                 </div>
                 
-                <!-- 视频进度条（更淡的样式） -->
+                <!-- 视频进度条 -->
                 <div id="video-controls" style="
                     position: absolute;
                     bottom: 0;
                     left: 0;
                     width: 100%;
-                    background: rgba(0,0,0,0.3);  /* 更淡的背景 */
-                    padding: 6px 8px;
+                    background: rgba(0,0,0,0.3);
+                    padding: 8px;
                     display: none;
                 ">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <input type="range" id="video-progress" style="
                             flex: 1;
-                            height: 4px;
-                            background: rgba(255,255,255,0.2);
-                            border-radius: 2px;
-                            outline: none;
-                            cursor: pointer;
+                            height: 6px;
+                            margin: 0;
+                            padding: 0;
                         " min="0" max="100" value="0">
                         <span id="video-time" style="color: rgba(255,255,255,0.8); font-size: 11px; min-width: 75px;">0:00 / 0:00</span>
                     </div>
@@ -101,7 +102,7 @@
             </div>
         `;
         
-        // 创建可拖动控制按钮
+        // 创建控制按钮
         const buttonPosition = getButtonPosition();
         const buttonHTML = `
             <div id="media-control-btn" style="
@@ -140,7 +141,6 @@
             return `left: ${pos.x}px; top: ${pos.y}px;`;
         }
         
-        // 默认位置
         switch (config.buttonPosition) {
             case 'bottom-left':
                 return 'bottom: 60px; left: 20px;';
@@ -148,7 +148,7 @@
                 return 'top: 20px; left: 20px;';
             case 'top-right':
                 return 'top: 20px; right: 20px;';
-            default: // bottom-right
+            default:
                 return 'bottom: 60px; right: 20px;';
         }
     }
@@ -156,8 +156,16 @@
     // 绑定播放器事件
     function bindPlayerEvents() {
         const player = document.getElementById('minimal-player');
+        const content = document.getElementById('player-content');
         const video = document.getElementById('player-video');
         const progress = document.getElementById('video-progress');
+        
+        // 双击切换下一个媒体
+        player.addEventListener('dblclick', function(e) {
+            if (e.target.id !== 'video-progress') {
+                nextMedia();
+            }
+        });
         
         // 整个播放器可拖动
         player.addEventListener('mousedown', startPlayerDrag);
@@ -175,7 +183,7 @@
             if (config.videoMuted) video.muted = true;
             updateVideoProgress();
             adjustPlayerHeight();
-            ensurePlayerInViewport(); // 确保在视口内
+            ensurePlayerInViewport();
         });
         
         video.addEventListener('ended', nextMedia);
@@ -184,7 +192,7 @@
         const img = document.getElementById('player-img');
         img.addEventListener('load', function() {
             adjustPlayerHeight();
-            ensurePlayerInViewport(); // 确保在视口内
+            ensurePlayerInViewport();
         });
     }
     
@@ -192,18 +200,15 @@
     function bindButtonEvents() {
         const button = document.getElementById('media-control-btn');
         
-        // 按钮点击（切换播放器）
         button.addEventListener('click', function(e) {
             if (!isDraggingButton) {
                 togglePlayer();
             }
         });
         
-        // 按钮拖动
         button.addEventListener('mousedown', startButtonDrag);
         button.addEventListener('touchstart', startButtonDrag);
         
-        // 移动端优化
         button.addEventListener('touchstart', function(e) {
             e.preventDefault();
         });
@@ -250,7 +255,6 @@
             clientY = e.touches[0].clientY;
         }
         
-        // 限制在窗口范围内
         const x = Math.max(10, Math.min(window.innerWidth - button.offsetWidth - 10, clientX - buttonDragOffset.x));
         const y = Math.max(10, Math.min(window.innerHeight - button.offsetHeight - 10, clientY - buttonDragOffset.y));
         
@@ -267,7 +271,6 @@
         button.style.cursor = 'move';
         button.style.opacity = '1';
         
-        // 保存按钮位置
         const rect = button.getBoundingClientRect();
         localStorage.setItem('media_button_position', JSON.stringify({
             x: rect.left,
@@ -282,7 +285,6 @@
     
     // 开始拖动播放器
     function startPlayerDrag(e) {
-        // 如果是进度条点击，不触发拖动
         if (e.target.id === 'video-progress' || e.target.id === 'video-time') return;
         
         e.preventDefault();
@@ -354,7 +356,6 @@
         let newX = parseFloat(player.style.left) || (viewportWidth - rect.width) / 2;
         let newY = parseFloat(player.style.top) || (viewportHeight - rect.height) / 2;
         
-        // 检查边界
         if (newX < 0) newX = 10;
         if (newY < 0) newY = 10;
         if (newX + rect.width > viewportWidth) newX = viewportWidth - rect.width - 10;
@@ -385,8 +386,25 @@
                 const finalHeight = Math.min(calculatedHeight, maxHeight);
                 
                 player.style.height = finalHeight + 'px';
-                ensurePlayerInViewport(); // 调整高度后重新定位
+                ensurePlayerInViewport();
             }
+        }
+    }
+    
+    // 更新媒体透明度
+    function updateMediaOpacity() {
+        const img = document.getElementById('player-img');
+        const video = document.getElementById('player-video');
+        const player = document.getElementById('minimal-player');
+        
+        if (player) {
+            player.style.background = `rgba(0, 0, 0, ${config.playerOpacity})`;
+        }
+        if (img) {
+            img.style.opacity = config.playerOpacity;
+        }
+        if (video) {
+            video.style.opacity = config.playerOpacity;
         }
     }
     
@@ -401,7 +419,7 @@
             btn.innerHTML = '⏹️';
             btn.title = '停止播放';
             startPlayback();
-            ensurePlayerInViewport(); // 显示时确保在视口内
+            ensurePlayerInViewport();
         } else {
             player.style.display = 'none';
             btn.innerHTML = '🎵';
@@ -474,6 +492,7 @@
             slideTimer = setInterval(nextMedia, config.slideInterval);
         }
         
+        updateMediaOpacity();
         setTimeout(adjustPlayerHeight, 100);
     }
     
@@ -541,7 +560,7 @@
         const html = `
             <div class="list-group-item" id="media-player-settings">
                 <h5>🎵 媒体播放器 v${PLUGIN_VERSION}</h5>
-                <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功</p>
+                <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功 - 双击播放器切换下一个</p>
                 
                 <div class="form-group">
                     <label><input type="checkbox" id="mp-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
@@ -558,9 +577,24 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>播放器透明度:</label>
-                    <input type="range" class="form-control" id="mp-opacity" min="10" max="100" value="${config.playerOpacity * 100}">
-                    <small class="form-text text-muted">当前: ${Math.round(config.playerOpacity * 100)}%</small>
+                    <label>播放器透明度: <span id="opacity-value">${Math.round(config.playerOpacity * 100)}%</span></label>
+                    <input type="range" class="form-control-range" id="mp-opacity" min="10" max="100" value="${config.playerOpacity * 100}">
+                    <input type="number" class="form-control mt-1" id="mp-opacity-input" min="10" max="100" value="${Math.round(config.playerOpacity * 100)}" style="width: 100px; display: inline-block;">
+                    <span>%</span>
+                </div>
+                
+                <div class="form-group">
+                    <label>播放器宽度: <span id="width-value">${config.playerWidth}px</span></label>
+                    <input type="range" class="form-control-range" id="mp-width" min="200" max="800" value="${config.playerWidth}">
+                    <input type="number" class="form-control mt-1" id="mp-width-input" min="200" max="800" value="${config.playerWidth}" style="width: 100px; display: inline-block;">
+                    <span>px</span>
+                </div>
+                
+                <div class="form-group">
+                    <label>图片切换间隔: <span id="interval-value">${config.slideInterval}ms</span></label>
+                    <input type="range" class="form-control-range" id="mp-interval" min="500" max="10000" step="500" value="${config.slideInterval}">
+                    <input type="number" class="form-control mt-1" id="mp-interval-input" min="500" max="10000" step="500" value="${config.slideInterval}" style="width: 100px; display: inline-block;">
+                    <span>ms</span>
                 </div>
                 
                 <div class="form-group">
@@ -581,18 +615,7 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>图片切换间隔 (毫秒):</label>
-                    <input type="number" class="form-control" id="mp-interval" value="${config.slideInterval}" min="1000" max="10000">
-                </div>
-                
-                <div class="form-group">
                     <label><input type="checkbox" id="mp-muted" ${config.videoMuted ? 'checked' : ''}> 视频静音播放</label>
-                </div>
-                
-                <div class="form-group">
-                    <label>播放器宽度:</label>
-                    <input type="number" class="form-control" id="mp-width" value="${config.playerWidth}" min="200" max="800">
-                    <small class="form-text text-muted">高度会根据媒体比例自动调整</small>
                 </div>
                 
                 <div class="form-group">
@@ -615,6 +638,7 @@
     }
     
     function bindSettingsEvents() {
+        // 启用开关
         $('#mp-enabled').on('change', function() {
             config.enabled = this.checked;
             document.getElementById('media-control-btn').style.display = this.checked ? 'flex' : 'none';
@@ -623,25 +647,93 @@
             showStatus('设置已更新');
         });
         
+        // 按钮位置
         $('#mp-button-position').on('change', function() {
             config.buttonPosition = this.value;
-            localStorage.removeItem('media_button_position'); // 清除保存的位置
-            createPlayer(); // 重新创建播放器
+            localStorage.removeItem('media_button_position');
+            createPlayer();
             saveConfig();
             showStatus('按钮位置已更新');
         });
         
+        // 透明度滑块和输入框联动
         $('#mp-opacity').on('input', function() {
-            const opacity = parseInt(this.value) / 100;
-            config.playerOpacity = opacity;
-            const player = document.getElementById('minimal-player');
-            if (player) {
-                player.style.background = `rgba(0, 0, 0, ${opacity})`;
-            }
-            $('small.form-text').text(`当前: ${this.value}%`);
+            const value = parseInt(this.value);
+            $('#mp-opacity-input').val(value);
+            $('#opacity-value').text(value + '%');
+            config.playerOpacity = value / 100;
+            updateMediaOpacity();
             saveConfig();
         });
         
+        $('#mp-opacity-input').on('input', function() {
+            let value = parseInt(this.value) || 95;
+            value = Math.max(10, Math.min(100, value));
+            $('#mp-opacity').val(value);
+            $('#opacity-value').text(value + '%');
+            config.playerOpacity = value / 100;
+            updateMediaOpacity();
+            saveConfig();
+        });
+        
+        // 宽度滑块和输入框联动
+        $('#mp-width').on('input', function() {
+            const value = parseInt(this.value);
+            $('#mp-width-input').val(value);
+            $('#width-value').text(value + 'px');
+            config.playerWidth = value;
+            const player = document.getElementById('minimal-player');
+            if (player) {
+                player.style.width = value + 'px';
+                adjustPlayerHeight();
+                ensurePlayerInViewport();
+            }
+            saveConfig();
+        });
+        
+        $('#mp-width-input').on('input', function() {
+            let value = parseInt(this.value) || 300;
+            value = Math.max(200, Math.min(800, value));
+            $('#mp-width').val(value);
+            $('#width-value').text(value + 'px');
+            config.playerWidth = value;
+            const player = document.getElementById('minimal-player');
+            if (player) {
+                player.style.width = value + 'px';
+                adjustPlayerHeight();
+                ensurePlayerInViewport();
+            }
+            saveConfig();
+        });
+        
+        // 间隔滑块和输入框联动
+        $('#mp-interval').on('input', function() {
+            const value = parseInt(this.value);
+            $('#mp-interval-input').val(value);
+            $('#interval-value').text(value + 'ms');
+            config.slideInterval = value;
+            // 如果正在播放，重新设置定时器
+            if (slideTimer) {
+                clearInterval(slideTimer);
+                slideTimer = setInterval(nextMedia, config.slideInterval);
+            }
+            saveConfig();
+        });
+        
+        $('#mp-interval-input').on('input', function() {
+            let value = parseInt(this.value) || 3000;
+            value = Math.max(500, Math.min(10000, value));
+            $('#mp-interval').val(value);
+            $('#interval-value').text(value + 'ms');
+            config.slideInterval = value;
+            if (slideTimer) {
+                clearInterval(slideTimer);
+                slideTimer = setInterval(nextMedia, config.slideInterval);
+            }
+            saveConfig();
+        });
+        
+        // 其他设置
         $('#mp-media-type').on('change', function() {
             config.mediaType = this.value;
             saveConfig();
@@ -654,27 +746,10 @@
             showStatus('播放模式已更新');
         });
         
-        $('#mp-interval').on('input', function() {
-            config.slideInterval = parseInt(this.value) || 3000;
-            saveConfig();
-        });
-        
         $('#mp-muted').on('change', function() {
             config.videoMuted = this.checked;
             saveConfig();
             showStatus('静音设置已更新');
-        });
-        
-        $('#mp-width').on('input', function() {
-            config.playerWidth = parseInt(this.value) || 300;
-            const player = document.getElementById('minimal-player');
-            if (player) {
-                player.style.width = config.playerWidth + 'px';
-                adjustPlayerHeight();
-                ensurePlayerInViewport();
-            }
-            saveConfig();
-            showStatus('播放器宽度已更新');
         });
         
         $('#mp-urls').on('input', function() {
@@ -710,13 +785,13 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化最终修复版播放器...');
+        console.log('🔧 初始化最终完善版播放器...');
         
         loadConfig();
         createPlayer();
         createSettingsPanel();
         
-        // 添加CSS样式（优化进度条颜色）
+        // 添加CSS样式（修复进度条位置）
         const style = document.createElement('style');
         style.textContent = `
             #minimal-player {
@@ -725,18 +800,28 @@
             #minimal-player:hover {
                 transform: scale(1.02);
             }
+            #video-progress {
+                -webkit-appearance: none;
+                width: 100%;
+                background: rgba(255,255,255,0.1);
+                border-radius: 3px;
+                outline: none;
+                cursor: pointer;
+            }
             #video-progress::-webkit-slider-thumb {
-                appearance: none;
+                -webkit-appearance: none;
                 width: 14px;
                 height: 14px;
                 border-radius: 50%;
-                background: #6b7280;  /* 灰色，不显眼 */
+                background: #6b7280;
                 cursor: pointer;
                 border: 2px solid #d1d5db;
+                margin-top: -5px;
             }
             #video-progress::-webkit-slider-runnable-track {
-                background: rgba(255,255,255,0.1);  /* 淡色进度条 */
+                width: 100%;
                 height: 4px;
+                background: rgba(255,255,255,0.1);
                 border-radius: 2px;
             }
             #video-progress::-moz-range-thumb {
@@ -748,25 +833,29 @@
                 border: 2px solid #d1d5db;
             }
             #video-progress::-moz-range-track {
-                background: rgba(255,255,255,0.1);
+                width: 100%;
                 height: 4px;
+                background: rgba(255,255,255,0.1);
                 border-radius: 2px;
                 border: none;
             }
             #media-control-btn:active {
                 transform: scale(0.95);
             }
+            .form-control-range {
+                width: 100%;
+                margin: 10px 0;
+            }
         `;
         document.head.appendChild(style);
         
-        // 窗口大小变化时重新定位
         window.addEventListener('resize', function() {
             if (isPlayerVisible) {
                 ensurePlayerInViewport();
             }
         });
         
-        console.log('✅ 最终修复版播放器初始化完成');
+        console.log('✅ 最终完善版播放器初始化完成');
     }
     
     // 启动
