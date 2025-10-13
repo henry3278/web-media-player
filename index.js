@@ -1,32 +1,82 @@
-// 文件名: index.js - 简洁可拖动媒体播放器
+// 文件名: index.js - 极简媒体播放器
 (function() {
-    console.log('🎵 简洁媒体播放器加载...');
+    console.log('🎵 极简媒体播放器加载...');
     
-    const PLUGIN_NAME = 'simple-media-player';
+    const PLUGIN_NAME = 'minimal-media-player';
     const PLUGIN_VERSION = '1.0.0';
     
     // 配置
     let config = {
         enabled: true,
-        mediaType: 'mixed', // mixed, image, video
+        mediaType: 'mixed',     // mixed, image, video
+        playMode: 'sequential', // sequential, random
         mediaUrls: [
             'https://picsum.photos/400/300?random=1',
             'https://picsum.photos/400/300?random=2'
         ],
-        autoPlay: true,
-        loop: true
+        slideInterval: 3000,    // 图片切换间隔(ms)
+        videoMuted: true        // 视频静音
     };
     
     let currentIndex = 0;
-    let isDragging = false;
-    let dragOffset = { x: 0, y: 0 };
+    let isPlayerVisible = false;
+    let slideTimer = null;
     
-    // 创建浮动按钮
-    function createFloatButton() {
-        const buttonHTML = `
-            <div id="media-float-btn" style="
+    // 创建极简播放器
+    function createMinimalPlayer() {
+        const playerHTML = `
+            <div id="minimal-player" style="
                 position: fixed;
-                bottom: 100px;
+                bottom: 120px;
+                right: 20px;
+                width: 300px;
+                height: 200px;
+                background: rgba(0, 0, 0, 0.9);
+                border-radius: 10px;
+                z-index: 10000;
+                display: none;
+                overflow: hidden;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            ">
+                <!-- 媒体显示区域 -->
+                <div id="player-content" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+                    <img id="player-img" style="max-width: 100%; max-height: 100%; object-fit: contain; display: none;">
+                    <video id="player-video" style="width: 100%; height: 100%; object-fit: contain; display: none;"></video>
+                </div>
+                
+                <!-- 视频进度条（仅视频模式显示） -->
+                <div id="video-progress" style="
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 4px;
+                    background: rgba(255,255,255,0.3);
+                    display: none;
+                ">
+                    <div id="progress-bar" style="height: 100%; background: #4299e1; width: 0%; transition: width 0.1s;"></div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', playerHTML);
+        
+        // 视频进度更新
+        const video = document.getElementById('player-video');
+        video.addEventListener('timeupdate', updateVideoProgress);
+        video.addEventListener('loadedmetadata', function() {
+            if (config.videoMuted) {
+                video.muted = true;
+            }
+        });
+    }
+    
+    // 创建控制按钮
+    function createControlButton() {
+        const buttonHTML = `
+            <div id="media-control-btn" style="
+                position: fixed;
+                bottom: 60px;
                 right: 20px;
                 width: 50px;
                 height: 50px;
@@ -34,211 +84,95 @@
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
                 border: none;
-                font-size: 24px;
-                cursor: move;
-                z-index: 10000;
+                font-size: 20px;
+                cursor: pointer;
+                z-index: 10001;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 box-shadow: 0 4px 15px rgba(0,0,0,0.2);
                 user-select: none;
-                touch-action: none;
-            " title="媒体播放器">
+                transition: transform 0.2s;
+            " title="点击切换媒体播放">
                 🎵
             </div>
         `;
         
         document.body.insertAdjacentHTML('beforeend', buttonHTML);
-        bindButtonEvents();
-    }
-    
-    // 绑定按钮事件（拖动+点击）
-    function bindButtonEvents() {
-        const btn = document.getElementById('media-float-btn');
         
-        // 鼠标/触摸拖动
-        btn.addEventListener('mousedown', startDrag);
-        btn.addEventListener('touchstart', startDrag);
+        // 按钮点击事件
+        document.getElementById('media-control-btn').addEventListener('click', togglePlayer);
         
-        // 点击打开播放器
-        btn.addEventListener('click', function(e) {
-            if (!isDragging) {
-                openPlayer();
-            }
+        // 移动端优化
+        document.getElementById('media-control-btn').addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            this.style.transform = 'scale(0.95)';
         });
         
-        // 移动端优化：防止滚动时误触
-        btn.addEventListener('touchmove', function(e) {
+        document.getElementById('media-control-btn').addEventListener('touchend', function(e) {
             e.preventDefault();
-        }, { passive: false });
+            this.style.transform = 'scale(1)';
+            togglePlayer();
+        });
     }
     
-    // 开始拖动
-    function startDrag(e) {
-        isDragging = true;
-        const btn = document.getElementById('media-float-btn');
-        const rect = btn.getBoundingClientRect();
+    // 切换播放器显示/隐藏
+    function togglePlayer() {
+        isPlayerVisible = !isPlayerVisible;
+        const player = document.getElementById('minimal-player');
+        const btn = document.getElementById('media-control-btn');
         
-        if (e.type === 'mousedown') {
-            dragOffset.x = e.clientX - rect.left;
-            dragOffset.y = e.clientY - rect.top;
-            document.addEventListener('mousemove', onDrag);
-            document.addEventListener('mouseup', stopDrag);
+        if (isPlayerVisible) {
+            player.style.display = 'block';
+            btn.innerHTML = '⏹️';
+            btn.title = '停止播放';
+            startPlayback();
         } else {
-            const touch = e.touches[0];
-            dragOffset.x = touch.clientX - rect.left;
-            dragOffset.y = touch.clientY - rect.top;
-            document.addEventListener('touchmove', onDrag);
-            document.addEventListener('touchend', stopDrag);
+            player.style.display = 'none';
+            btn.innerHTML = '🎵';
+            btn.title = '开始播放';
+            stopPlayback();
         }
-        
-        btn.style.cursor = 'grabbing';
-        btn.style.opacity = '0.8';
     }
     
-    // 拖动中
-    function onDrag(e) {
-        if (!isDragging) return;
+    // 开始播放
+    function startPlayback() {
+        if (config.mediaUrls.length === 0) return;
         
-        const btn = document.getElementById('media-float-btn');
-        let clientX, clientY;
-        
-        if (e.type === 'mousemove') {
-            clientX = e.clientX;
-            clientY = e.clientY;
+        // 根据播放模式选择起始索引
+        if (config.playMode === 'random') {
+            currentIndex = Math.floor(Math.random() * config.mediaUrls.length);
         } else {
-            clientX = e.touches[0].clientX;
-            clientY = e.touches[0].clientY;
+            currentIndex = 0;
         }
         
-        // 限制在窗口范围内
-        const x = Math.max(0, Math.min(window.innerWidth - btn.offsetWidth, clientX - dragOffset.x));
-        const y = Math.max(0, Math.min(window.innerHeight - btn.offsetHeight, clientY - dragOffset.y));
-        
-        btn.style.left = x + 'px';
-        btn.style.right = 'auto';
-        btn.style.bottom = 'auto';
-        btn.style.top = y + 'px';
-    }
-    
-    // 停止拖动
-    function stopDrag() {
-        isDragging = false;
-        const btn = document.getElementById('media-float-btn');
-        btn.style.cursor = 'grab';
-        btn.style.opacity = '1';
-        
-        document.removeEventListener('mousemove', onDrag);
-        document.removeEventListener('mouseup', stopDrag);
-        document.removeEventListener('touchmove', onDrag);
-        document.removeEventListener('touchend', stopDrag);
-        
-        // 保存位置
-        saveButtonPosition();
-    }
-    
-    // 保存按钮位置
-    function saveButtonPosition() {
-        const btn = document.getElementById('media-float-btn');
-        const rect = btn.getBoundingClientRect();
-        localStorage.setItem('media_btn_position', JSON.stringify({
-            x: rect.left,
-            y: rect.top
-        }));
-    }
-    
-    // 加载按钮位置
-    function loadButtonPosition() {
-        const saved = localStorage.getItem('media_btn_position');
-        if (saved) {
-            const pos = JSON.parse(saved);
-            const btn = document.getElementById('media-float-btn');
-            btn.style.left = pos.x + 'px';
-            btn.style.top = pos.y + 'px';
-            btn.style.right = 'auto';
-            btn.style.bottom = 'auto';
-        }
-    }
-    
-    // 打开播放器
-    function openPlayer() {
-        // 如果已有播放器，先关闭
-        closePlayer();
-        
-        const playerHTML = `
-            <div id="media-player" style="
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                width: 90vw;
-                max-width: 500px;
-                max-height: 80vh;
-                background: rgba(45, 55, 72, 0.95);
-                backdrop-filter: blur(10px);
-                border-radius: 15px;
-                z-index: 10001;
-                color: white;
-                display: flex;
-                flex-direction: column;
-                box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-            ">
-                <!-- 标题栏 -->
-                <div style="padding: 15px; border-bottom: 1px solid #4a5568; display: flex; justify-content: space-between; align-items: center;">
-                    <strong>媒体播放器</strong>
-                    <button onclick="closePlayer()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button>
-                </div>
-                
-                <!-- 内容区域 -->
-                <div style="flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 15px;">
-                    <!-- 媒体显示 -->
-                    <div id="media-display" style="width: 100%; text-align: center;">
-                        <img id="player-img" style="max-width: 100%; max-height: 300px; border-radius: 10px; display: none;">
-                        <video id="player-video" controls style="max-width: 100%; max-height: 300px; border-radius: 10px; display: none;"></video>
-                    </div>
-                    
-                    <!-- 控制按钮 -->
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
-                        <button onclick="prevMedia()" class="media-control-btn">⬅️</button>
-                        <button onclick="togglePlay()" class="media-control-btn" id="play-btn">▶️</button>
-                        <button onclick="nextMedia()" class="media-control-btn">➡️</button>
-                    </div>
-                    
-                    <!-- 进度信息 -->
-                    <div style="font-size: 14px; color: #a0aec0;">
-                        <span id="media-info">-/-</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- 遮罩层 -->
-            <div id="media-overlay" style="
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0,0,0,0.5);
-                z-index: 10000;
-            " onclick="closePlayer()"></div>
-        `;
-        
-        document.body.insertAdjacentHTML('beforeend', playerHTML);
         loadCurrentMedia();
         
-        // 添加到全局函数
-        window.closePlayer = closePlayer;
-        window.prevMedia = prevMedia;
-        window.nextMedia = nextMedia;
-        window.togglePlay = togglePlay;
+        // 图片模式：启动幻灯片
+        if (config.mediaType === 'image' || config.mediaType === 'mixed') {
+            startSlideShow();
+        }
     }
     
-    // 关闭播放器
-    function closePlayer() {
-        const player = document.getElementById('media-player');
-        const overlay = document.getElementById('media-overlay');
-        if (player) player.remove();
-        if (overlay) overlay.remove();
+    // 停止播放
+    function stopPlayback() {
+        // 停止幻灯片
+        if (slideTimer) {
+            clearInterval(slideTimer);
+            slideTimer = null;
+        }
+        
+        // 停止视频
+        const video = document.getElementById('player-video');
+        if (video) {
+            video.pause();
+            video.currentTime = 0;
+        }
+        
+        // 隐藏所有媒体
+        document.getElementById('player-img').style.display = 'none';
+        document.getElementById('player-video').style.display = 'none';
+        document.getElementById('video-progress').style.display = 'none';
     }
     
     // 加载当前媒体
@@ -247,69 +181,84 @@
         
         const url = config.mediaUrls[currentIndex];
         const isVideo = isVideoUrl(url);
+        
+        // 根据媒体类型过滤
         const shouldShow = (config.mediaType === 'mixed') || 
                           (config.mediaType === 'image' && !isVideo) ||
                           (config.mediaType === 'video' && isVideo);
         
         if (!shouldShow) {
-            // 跳过不符合类型的媒体
             nextMedia();
             return;
         }
         
         const img = document.getElementById('player-img');
         const video = document.getElementById('player-video');
+        const progress = document.getElementById('video-progress');
         
+        // 隐藏所有
         img.style.display = 'none';
         video.style.display = 'none';
+        progress.style.display = 'none';
         
         if (isVideo) {
+            // 视频模式
             video.src = url;
             video.style.display = 'block';
-            if (config.autoPlay) video.play();
-            if (config.loop) video.loop = true;
+            progress.style.display = 'block';
+            
+            if (config.videoMuted) {
+                video.muted = true;
+            }
+            
+            video.play().catch(e => {
+                console.log('视频播放失败:', e);
+            });
         } else {
+            // 图片模式
             img.src = url;
             img.style.display = 'block';
         }
-        
-        updateMediaInfo();
     }
     
-    // 上一个媒体
-    function prevMedia() {
-        if (config.mediaUrls.length === 0) return;
-        currentIndex = (currentIndex - 1 + config.mediaUrls.length) % config.mediaUrls.length;
-        loadCurrentMedia();
+    // 开始幻灯片播放（图片模式）
+    function startSlideShow() {
+        if (slideTimer) {
+            clearInterval(slideTimer);
+        }
+        
+        slideTimer = setInterval(() => {
+            nextMedia();
+        }, config.slideInterval);
     }
     
     // 下一个媒体
     function nextMedia() {
         if (config.mediaUrls.length === 0) return;
-        currentIndex = (currentIndex + 1) % config.mediaUrls.length;
+        
+        if (config.playMode === 'random') {
+            currentIndex = Math.floor(Math.random() * config.mediaUrls.length);
+        } else {
+            currentIndex = (currentIndex + 1) % config.mediaUrls.length;
+        }
+        
         loadCurrentMedia();
     }
     
-    // 播放/暂停
-    function togglePlay() {
+    // 更新视频进度条
+    function updateVideoProgress() {
         const video = document.getElementById('player-video');
-        const btn = document.getElementById('play-btn');
+        const progressBar = document.getElementById('progress-bar');
         
-        if (video && video.style.display !== 'none') {
-            if (video.paused) {
-                video.play();
-                btn.innerHTML = '⏸️';
-            } else {
-                video.pause();
-                btn.innerHTML = '▶️';
-            }
+        if (video.duration > 0) {
+            const progress = (video.currentTime / video.duration) * 100;
+            progressBar.style.width = progress + '%';
         }
-    }
-    
-    // 更新媒体信息
-    function updateMediaInfo() {
-        const info = document.getElementById('media-info');
-        info.textContent = `${currentIndex + 1}/${config.mediaUrls.length}`;
+        
+        // 视频播放结束自动下一个
+        if (video.ended) {
+            nextMedia();
+        }
     }
     
     // 判断URL类型
@@ -319,12 +268,12 @@
     
     // 保存配置
     function saveConfig() {
-        localStorage.setItem('simple_media_config', JSON.stringify(config));
+        localStorage.setItem('minimal_media_config', JSON.stringify(config));
     }
     
     // 加载配置
     function loadConfig() {
-        const saved = localStorage.getItem('simple_media_config');
+        const saved = localStorage.getItem('minimal_media_config');
         if (saved) {
             config = JSON.parse(saved);
         }
@@ -334,15 +283,16 @@
     function createSettingsPanel() {
         const html = `
             <div class="list-group-item">
-                <h5>🎵 简洁媒体播放器 v${PLUGIN_VERSION}</h5>
+                <h5>🎵 极简媒体播放器 v${PLUGIN_VERSION}</h5>
+                <p style="color: #666; font-size: 12px;">点击右下角按钮切换播放器显示/隐藏</p>
                 
                 <div class="form-group">
-                    <label><input type="checkbox" id="sm-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
+                    <label><input type="checkbox" id="mm-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
                 </div>
                 
                 <div class="form-group">
                     <label>媒体类型:</label>
-                    <select class="form-control" id="sm-media-type">
+                    <select class="form-control" id="mm-media-type">
                         <option value="mixed" ${config.mediaType === 'mixed' ? 'selected' : ''}>混合模式</option>
                         <option value="image" ${config.mediaType === 'image' ? 'selected' : ''}>仅图片</option>
                         <option value="video" ${config.mediaType === 'video' ? 'selected' : ''}>仅视频</option>
@@ -350,122 +300,185 @@
                 </div>
                 
                 <div class="form-group">
+                    <label>播放模式:</label>
+                    <select class="form-control" id="mm-play-mode">
+                        <option value="sequential" ${config.playMode === 'sequential' ? 'selected' : ''}>顺序播放</option>
+                        <option value="random" ${config.playMode === 'random' ? 'selected' : ''}>随机播放</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="slide-interval-group" style="${config.mediaType === 'video' ? 'display: none;' : ''}">
+                    <label>图片切换间隔 (毫秒):</label>
+                    <input type="number" class="form-control" id="mm-interval" value="${config.slideInterval}" min="1000" max="10000">
+                </div>
+                
+                <div class="form-group" id="video-muted-group" style="${config.mediaType === 'image' ? 'display: none;' : ''}">
+                    <label><input type="checkbox" id="mm-muted" ${config.videoMuted ? 'checked' : ''}> 视频静音播放</label>
+                </div>
+                
+                <div class="form-group">
                     <label>媒体URL列表:</label>
-                    <textarea class="form-control" id="sm-urls" rows="4" placeholder="每行一个URL" style="font-size: 12px;">${config.mediaUrls.join('\n')}</textarea>
+                    <textarea class="form-control" id="mm-urls" rows="5" placeholder="每行一个URL" style="font-size: 12px; font-family: monospace;">${config.mediaUrls.join('\n')}</textarea>
                 </div>
                 
-                <div class="form-group">
-                    <label><input type="checkbox" id="sm-autoplay" ${config.autoPlay ? 'checked' : ''}> 自动播放视频</label>
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-success" id="mm-save">保存设置</button>
+                    <button class="btn btn-sm btn-primary" id="mm-test">测试播放</button>
                 </div>
                 
-                <div class="form-group">
-                    <label><input type="checkbox" id="sm-loop" ${config.loop ? 'checked' : ''}> 循环播放</label>
-                </div>
-                
-                <button class="btn btn-sm btn-success" id="sm-save">保存设置</button>
-                <button class="btn btn-sm btn-primary" id="sm-test">测试播放器</button>
-                
-                <div id="sm-status" style="margin-top: 10px; font-size: 12px;"></div>
+                <div id="mm-status" style="margin-top: 10px; font-size: 12px;"></div>
             </div>
         `;
         
         $('#extensions_settings').append(html);
-        
-        // 绑定设置事件
-        $('#sm-enabled').on('change', function() {
+        bindSettingsEvents();
+    }
+    
+    // 绑定设置事件
+    function bindSettingsEvents() {
+        // 启用开关
+        $('#mm-enabled').on('change', function() {
             config.enabled = this.checked;
-            document.getElementById('media-float-btn').style.display = this.checked ? 'flex' : 'none';
+            document.getElementById('media-control-btn').style.display = this.checked ? 'flex' : 'none';
+            if (!this.checked) {
+                togglePlayer(); // 如果禁用，关闭播放器
+            }
             saveConfig();
         });
         
-        $('#sm-media-type, #sm-autoplay, #sm-loop').on('change', function() {
-            config.mediaType = $('#sm-media-type').val();
-            config.autoPlay = $('#sm-autoplay').is(':checked');
-            config.loop = $('#sm-loop').is(':checked');
+        // 媒体类型变化
+        $('#mm-media-type').on('change', function() {
+            config.mediaType = this.value;
+            
+            // 显示/隐藏相关设置
+            if (this.value === 'image') {
+                $('#slide-interval-group').show();
+                $('#video-muted-group').hide();
+            } else if (this.value === 'video') {
+                $('#slide-interval-group').hide();
+                $('#video-muted-group').show();
+            } else {
+                $('#slide-interval-group').show();
+                $('#video-muted-group').show();
+            }
+            
             saveConfig();
         });
         
-        $('#sm-urls').on('input', function() {
+        // 其他设置
+        $('#mm-play-mode').on('change', function() {
+            config.playMode = this.value;
+            saveConfig();
+        });
+        
+        $('#mm-interval').on('input', function() {
+            config.slideInterval = parseInt(this.value) || 3000;
+            saveConfig();
+        });
+        
+        $('#mm-muted').on('change', function() {
+            config.videoMuted = this.checked;
+            saveConfig();
+        });
+        
+        $('#mm-urls').on('input', function() {
             config.mediaUrls = this.value.split('\n').filter(url => url.trim());
             saveConfig();
         });
         
-        $('#sm-save').on('click', function() {
+        // 保存按钮
+        $('#mm-save').on('click', function() {
             saveConfig();
             showStatus('✅ 设置已保存');
         });
         
-        $('#sm-test').on('click', function() {
-            openPlayer();
-            showStatus('🎵 播放器已打开');
+        // 测试按钮
+        $('#mm-test').on('click', function() {
+            if (!isPlayerVisible) {
+                togglePlayer();
+            }
+            showStatus('🎵 播放器已启动');
         });
     }
     
     // 显示状态
     function showStatus(message) {
-        $('#sm-status').text(message).css('color', 'green');
-        setTimeout(() => $('#sm-status').text(''), 3000);
+        $('#mm-status').text(message).css('color', 'green');
+        setTimeout(() => $('#mm-status').text(''), 3000);
     }
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化简洁播放器...');
+        console.log('🔧 初始化极简播放器...');
         
         loadConfig();
-        createFloatButton();
-        loadButtonPosition();
+        createMinimalPlayer();
+        createControlButton();
         createSettingsPanel();
         
         // 根据启用状态显示/隐藏按钮
-        document.getElementById('media-float-btn').style.display = config.enabled ? 'flex' : 'none';
+        document.getElementById('media-control-btn').style.display = config.enabled ? 'flex' : 'none';
         
-        console.log('✅ 简洁播放器初始化完成');
+        console.log('✅ 极简播放器初始化完成');
     }
     
     // 添加CSS样式
     const style = document.createElement('style');
     style.textContent = `
-        .media-control-btn {
-            background: #4a5568;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 10px 15px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background 0.3s;
+        #minimal-player {
+            transition: transform 0.3s ease;
         }
         
-        .media-control-btn:hover {
-            background: #2d3748;
+        #minimal-player:hover {
+            transform: scale(1.02);
         }
         
+        #media-control-btn:active {
+            transform: scale(0.95);
+        }
+        
+        /* 移动端优化 */
         @media (max-width: 768px) {
-            #media-float-btn {
+            #minimal-player {
+                width: 250px;
+                height: 170px;
+                bottom: 100px;
+                right: 10px;
+            }
+            
+            #media-control-btn {
                 width: 60px;
                 height: 60px;
-                font-size: 28px;
-                bottom: 80px;
+                font-size: 24px;
+                bottom: 70px;
                 right: 15px;
-            }
-            
-            #media-player {
-                width: 95vw;
-                max-height: 85vh;
-            }
-            
-            .media-control-btn {
-                padding: 12px 18px;
-                font-size: 18px;
             }
         }
         
         @media (max-width: 480px) {
-            #media-float-btn {
+            #minimal-player {
+                width: 200px;
+                height: 140px;
+                bottom: 90px;
+                right: 10px;
+            }
+            
+            #media-control-btn {
                 width: 70px;
                 height: 70px;
-                font-size: 32px;
+                font-size: 28px;
+                bottom: 60px;
+                right: 10px;
             }
+        }
+        
+        /* 视频进度条样式 */
+        #video-progress:hover {
+            height: 8px;
+        }
+        
+        #progress-bar {
+            transition: width 0.3s ease;
         }
     `;
     document.head.appendChild(style);
