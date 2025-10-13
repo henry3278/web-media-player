@@ -1,9 +1,9 @@
-// index.js - 修复版媒体播放器
+// index.js - 完善版媒体播放器
 (function() {
-    console.log('🎵 修复版媒体播放器加载...');
+    console.log('🎵 完善版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '1.7.0';
+    const PLUGIN_VERSION = '1.8.0';
     
     // 配置
     let config = {
@@ -18,7 +18,7 @@
         videoMuted: true,
         playerWidth: 300,
         playerOpacity: 0.95,
-        controlsOpacity: 0.9,  // 新增：控制条透明度
+        controlsOpacity: 0.9,
         buttonPosition: 'bottom-right'
     };
     
@@ -87,50 +87,58 @@
                     "></video>
                 </div>
                 
-                <!-- 视频进度条（缓存和播放进度重叠） -->
+                <!-- 视频进度条（合并的进度显示） -->
                 <div id="video-controls" style="
                     position: absolute;
                     bottom: 0;
                     left: 0;
                     width: 100%;
-                    background: rgba(0,0,0,${config.controlsOpacity});
                     padding: 8px;
                     display: none;
+                    opacity: ${config.controlsOpacity};
                 ">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <div class="video-progress-container">
-                            <!-- 缓存进度条（底层） -->
+                        <div class="video-progress-container" style="
+                            position: relative;
+                            flex: 1;
+                            height: 6px;
+                            background: rgba(255,255,255,0.1);
+                            border-radius: 3px;
+                            margin-right: 8px;
+                        ">
+                            <!-- 缓存进度条 -->
                             <div id="video-buffer" style="
                                 position: absolute;
                                 top: 0;
                                 left: 0;
                                 height: 100%;
                                 background: rgba(255,255,255,0.3);
-                                border-radius: 2px;
+                                border-radius: 3px;
                                 pointer-events: none;
                                 z-index: 1;
                             "></div>
-                            <!-- 播放进度条（中层） -->
+                            <!-- 播放进度条 -->
                             <div id="video-played" style="
                                 position: absolute;
                                 top: 0;
                                 left: 0;
                                 height: 100%;
                                 background: rgba(100,100,100,0.6);
-                                border-radius: 2px;
+                                border-radius: 3px;
                                 pointer-events: none;
                                 z-index: 2;
                             "></div>
-                            <!-- 拖动滑块（顶层） -->
+                            <!-- 拖动滑块 -->
                             <input type="range" id="video-progress" style="
-                                position: relative;
-                                z-index: 3;
+                                position: absolute;
+                                top: 0;
+                                left: 0;
                                 width: 100%;
-                                height: 6px;
+                                height: 100%;
                                 margin: 0;
-                                opacity: 1;
-                                -webkit-appearance: none;
-                                background: transparent;
+                                opacity: 0;
+                                cursor: pointer;
+                                z-index: 3;
                             " min="0" max="100" value="0">
                         </div>
                         <span id="video-time" style="color: rgba(255,255,255,0.9); font-size: 11px; min-width: 75px;">0:00 / 0:00</span>
@@ -480,6 +488,7 @@
         const video = document.getElementById('player-video');
         const player = document.getElementById('minimal-player');
         const videoControls = document.getElementById('video-controls');
+        const timeDisplay = document.getElementById('video-time');
         
         if (player) {
             player.style.background = `rgba(0, 0, 0, ${config.playerOpacity})`;
@@ -491,7 +500,10 @@
             video.style.opacity = config.playerOpacity;
         }
         if (videoControls) {
-            videoControls.style.background = `rgba(0,0,0,${config.controlsOpacity})`;
+            videoControls.style.opacity = config.controlsOpacity;
+        }
+        if (timeDisplay) {
+            timeDisplay.style.opacity = config.controlsOpacity;
         }
     }
     
@@ -732,6 +744,32 @@
         return invalidUrls.length;
     }
     
+    // 导出URL列表
+    function exportUrls() {
+        const urlsText = config.mediaUrls.join('\n');
+        const blob = new Blob([urlsText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'media_urls.txt';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    
+    // 导入URL列表
+    function importUrls(text, mode) {
+        const newUrls = text.split('\n').filter(url => url.trim());
+        
+        if (mode === 'replace') {
+            config.mediaUrls = [...new Set(newUrls)];
+        } else { // append
+            config.mediaUrls = [...new Set([...config.mediaUrls, ...newUrls])];
+        }
+        
+        saveConfig();
+        return newUrls.length;
+    }
+    
     // 配置管理
     function loadConfig() {
         try {
@@ -865,6 +903,16 @@
                     <div class="btn-group mt-2">
                         <button class="btn btn-sm btn-info" id="mp-validate-urls">检测URL</button>
                         <button class="btn btn-sm btn-warning" id="mp-clear-invalid">清除失效URL</button>
+                        <button class="btn btn-sm btn-success" id="mp-export-urls">导出URL</button>
+                    </div>
+                    
+                    <div class="mt-2">
+                        <label>导入URL:</label>
+                        <textarea class="form-control" id="mp-import-text" rows="3" placeholder="粘贴URL列表，每行一个" style="font-size: 12px;"></textarea>
+                        <div class="btn-group mt-1 w-100">
+                            <button class="btn btn-sm btn-primary" id="mp-import-append">追加导入</button>
+                            <button class="btn btn-sm btn-danger" id="mp-import-replace">覆盖导入</button>
+                        </div>
                     </div>
                 </div>
                 
@@ -922,7 +970,7 @@
             saveConfig();
         });
         
-        // 控制条透明度
+                // 控制条透明度
         $('#mp-controls-opacity').on('input', function() {
             const value = parseInt(this.value);
             $('#mp-controls-opacity-input').val(value);
@@ -957,7 +1005,7 @@
             saveConfig();
         });
         
-                $('#mp-width-input').on('input', function() {
+        $('#mp-width-input').on('input', function() {
             let value = parseInt(this.value) || 300;
             value = Math.max(200, Math.min(800, value));
             $('#mp-width').val(value);
@@ -1085,6 +1133,59 @@
             }
         });
         
+        // 导出URL
+        $('#mp-export-urls').on('click', function() {
+            exportUrls();
+            showStatus('✅ URL列表已导出');
+        });
+        
+        // 导入URL
+        $('#mp-import-append').on('click', function() {
+            const importText = $('#mp-import-text').val().trim();
+            if (!importText) {
+                showStatus('请输入要导入的URL', 'error');
+                return;
+            }
+            
+            const importedCount = importUrls(importText, 'append');
+            // 更新所有URL文本框
+            $('#mp-urls').val(config.mediaUrls.join('\n'));
+            
+            // 更新分类URL文本框
+            const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+            const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+            $('#mp-urls-images').val(imageUrls.join('\n'));
+            $('#mp-urls-videos').val(videoUrls.join('\n'));
+            
+            updateUrlStats();
+            showStatus(`✅ 已追加导入 ${importedCount} 个URL`);
+        });
+        
+        $('#mp-import-replace').on('click', function() {
+            const importText = $('#mp-import-text').val().trim();
+            if (!importText) {
+                showStatus('请输入要导入的URL', 'error');
+                return;
+            }
+            
+            if (!confirm('确定要覆盖现有的URL列表吗？此操作不可撤销。')) {
+                return;
+            }
+            
+            const importedCount = importUrls(importText, 'replace');
+            // 更新所有URL文本框
+            $('#mp-urls').val(config.mediaUrls.join('\n'));
+            
+            // 更新分类URL文本框
+            const imageUrls = config.mediaUrls.filter(url => isImageUrl(url));
+            const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
+            $('#mp-urls-images').val(imageUrls.join('\n'));
+            $('#mp-urls-videos').val(videoUrls.join('\n'));
+            
+            updateUrlStats();
+            showStatus(`✅ 已覆盖导入 ${importedCount} 个URL`);
+        });
+        
         // 重置播放器位置
         $('#mp-reset-player-pos').on('click', function() {
             localStorage.removeItem('media_player_position');
@@ -1133,7 +1234,7 @@
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化修复版播放器...');
+        console.log('🔧 初始化完善版播放器...');
         
         loadConfig();
         createPlayer();
@@ -1149,7 +1250,7 @@
             }
         });
         
-        console.log('✅ 修复版播放器初始化完成');
+        console.log('✅ 完善版播放器初始化完成');
     }
     
     // 加载CSS文件
@@ -1178,12 +1279,14 @@
             #video-progress {
                 -webkit-appearance: none;
                 width: 100%;
-                height: 6px;
+                height: 100%;
                 background: transparent;
                 border-radius: 3px;
                 outline: none;
                 cursor: pointer;
-                position: relative;
+                position: absolute;
+                top: 0;
+                left: 0;
                 z-index: 3;
             }
             #video-progress::-webkit-slider-thumb {
@@ -1197,7 +1300,7 @@
             }
             #video-progress::-webkit-slider-runnable-track {
                 width: 100%;
-                height: 6px;
+                height: 100%;
                 background: transparent;
                 border-radius: 3px;
             }
@@ -1211,7 +1314,7 @@
             }
             #video-progress::-moz-range-track {
                 width: 100%;
-                height: 6px;
+                height: 100%;
                 background: transparent;
                 border-radius: 3px;
                 border: none;
@@ -1228,7 +1331,6 @@
             }
             .url-status-invalid {
                 color: #dc3545;
-                text-decoration: line-through;
             }
             .url-stats {
                 font-size: 12px;
