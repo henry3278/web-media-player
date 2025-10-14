@@ -1,9 +1,9 @@
-// index.js - 修复手机端双击切换问题
+// index.js - 优化设置面板可折叠收缩版
 (function() {
-    console.log('🎵 修复手机端双击切换问题版媒体播放器加载...');
+    console.log('🎵 优化设置面板可折叠收缩版媒体播放器加载...');
     
     const PLUGIN_NAME = 'minimal-media-player';
-    const PLUGIN_VERSION = '2.4.3';
+    const PLUGIN_VERSION = '2.4.4';
     
     // 配置
     let config = {
@@ -19,7 +19,8 @@
         playerWidth: 300,
         playerOpacity: 0.95,
         controlsOpacity: 0.9,
-        buttonPosition: 'bottom-right'
+        buttonPosition: 'bottom-right',
+        settingsCollapsed: false // 新增：设置面板折叠状态
     };
     
     let currentIndex = 0;
@@ -42,7 +43,7 @@
                /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
     
-    // 首先加载CSS
+    // 首先加载CSS - 添加折叠样式
     function loadCSS() {
         if (document.getElementById('media-player-css')) return;
         
@@ -319,6 +320,57 @@
                 display: block;
             }
             
+            /* 设置面板折叠样式 */
+            .settings-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                cursor: pointer;
+                padding: 10px;
+                background: #f8f9fa;
+                border-radius: 4px;
+                margin-bottom: 10px;
+                border: 1px solid #dee2e6;
+                transition: all 0.3s ease;
+            }
+            
+            .settings-header:hover {
+                background: #e9ecef;
+            }
+            
+            .settings-header h5 {
+                margin: 0;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            
+            .settings-toggle {
+                font-size: 16px;
+                transition: transform 0.3s ease;
+            }
+            
+            .settings-toggle.collapsed {
+                transform: rotate(-90deg);
+            }
+            
+            .settings-content {
+                transition: all 0.3s ease;
+                overflow: hidden;
+            }
+            
+            .settings-content.collapsed {
+                max-height: 0;
+                opacity: 0;
+                padding: 0;
+                margin: 0;
+            }
+            
+            .settings-content.expanded {
+                max-height: 2000px;
+                opacity: 1;
+            }
+            
             /* 移动端专属优化 */
             .mobile-optimized #minimal-player {
                 max-width: 95vw !important;
@@ -394,6 +446,14 @@
                 body:not(.mobile-optimized) #video-time {
                     font-size: 11px;
                     min-width: 80px;
+                }
+                
+                .settings-header {
+                    padding: 8px;
+                }
+                
+                .settings-header h5 {
+                    font-size: 14px;
                 }
             }
             
@@ -611,7 +671,7 @@
         }
     }
     
-    // 绑定播放器事件 - 修复手机端双击切换问题
+    // 绑定播放器事件
     function bindPlayerEvents() {
         const player = document.getElementById('minimal-player');
         const video = document.getElementById('player-video');
@@ -1104,7 +1164,7 @@
         }
         
         const x = Math.max(0, Math.min(window.innerWidth - player.offsetWidth, clientX - playerDragOffset.x));
-        const y = Math.max(0, Math.min(window.innerHeight - player.offsetHeight, clientY - playerDragOffset.y));
+               const y = Math.max(0, Math.min(window.innerHeight - player.offsetHeight, clientY - playerDragOffset.y));
         
         player.style.left = x + 'px';
         player.style.top = y + 'px';
@@ -1142,7 +1202,7 @@
         
         if (newX < margin) newX = margin;
         if (newY < margin) newY = margin;
-                if (newX + rect.width > viewportWidth - margin) newX = viewportWidth - rect.width - margin;
+        if (newX + rect.width > viewportWidth - margin) newX = viewportWidth - rect.width - margin;
         if (newY + rect.height > viewportHeight - margin) newY = viewportHeight - rect.height - margin;
         
         player.style.left = newX + 'px';
@@ -1522,7 +1582,7 @@
         }
     }
     
-    // 创建设置面板
+    // 创建设置面板 - 添加折叠功能
     function createSettingsPanel() {
         const extensionsArea = document.getElementById('extensions_settings');
         if (!extensionsArea) {
@@ -1538,129 +1598,142 @@
         const videoUrls = config.mediaUrls.filter(url => isVideoUrl(url));
         const otherUrls = config.mediaUrls.filter(url => !isImageUrl(url) && !isVideoUrl(url));
         
+        const isCollapsed = config.settingsCollapsed;
+        const toggleIcon = isCollapsed ? '▶' : '▼';
+        const contentClass = isCollapsed ? 'collapsed' : 'expanded';
+        
         const html = `
             <div class="list-group-item" id="media-player-settings">
-                <h5>🎵 媒体播放器 v${PLUGIN_VERSION}</h5>
-                <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功 - 双击播放器切换下一个</p>
-                <p style="color: #666; font-size: 11px;">📝 控制条显示规则：单击/双击视频区域显示，3秒后自动隐藏</p>
-                <p style="color: #666; font-size: 11px;">🎛️ 进度条拖动：点击进度条任意位置或拖动滑块</p>
-                <p style="color: #007bff; font-size: 11px;">📱 移动端优化：按钮50px，播放器自适应屏幕</p>
-                
-                <div class="form-group">
-                    <label><input type="checkbox" id="mp-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
+                <div class="settings-header" id="settings-header">
+                    <h5>
+                        <span class="settings-toggle ${isCollapsed ? 'collapsed' : ''}">${toggleIcon}</span>
+                        🎵 媒体播放器 v${PLUGIN_VERSION}
+                    </h5>
+                    <span style="font-size: 12px; color: #666;">${isCollapsed ? '点击展开' : '点击折叠'}</span>
                 </div>
                 
-                <div class="form-group">
-                    <label>按钮位置:</label>
-                    <select class="form-control" id="mp-button-position">
-                        <option value="bottom-right" ${config.buttonPosition === 'bottom-right' ? 'selected' : ''}>右下角</option>
-                        <option value="bottom-left" ${config.buttonPosition === 'bottom-left' ? 'selected' : ''}>左下角</option>
-                        <option value="top-right" ${config.buttonPosition === 'top-right' ? 'selected' : ''}>右上角</option>
-                        <option value="top-left" ${config.buttonPosition === 'top-left' ? 'selected' : ''}>左上角</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label>播放器透明度: <span id="opacity-value">${Math.round(config.playerOpacity * 100)}%</span></label>
-                    <input type="range" class="form-control-range" id="mp-opacity" min="10" max="100" value="${config.playerOpacity * 100}">
-                    <input type="number" class="form-control mt-1" id="mp-opacity-input" min="10" max="100" value="${Math.round(config.playerOpacity * 100)}" style="width: 100px;">
-                    <span>%</span>
-                </div>
-                
-                <div class="form-group">
-                    <label>控制条透明度: <span id="controls-opacity-value">${Math.round(config.controlsOpacity * 100)}%</span></label>
-                    <input type="range" class="form-control-range" id="mp-controls-opacity" min="10" max="100" value="${config.controlsOpacity * 100}">
-                    <input type="number" class="form-control mt-1" id="mp-controls-opacity-input" min="10" max="100" value="${Math.round(config.controlsOpacity * 100)}" style="width: 100px;">
-                    <span>%</span>
-                </div>
-                
-                <div class="form-group">
-                    <label>播放器宽度: <span id="width-value">${config.playerWidth}px</span></label>
-                    <input type="range" class="form-control-range" id="mp-width" min="200" max="800" value="${config.playerWidth}">
-                    <input type="number" class="form-control mt-1" id="mp-width-input" min="200" max="800" value="${config.playerWidth}" style="width: 100px;">
-                    <span>px</span>
-                </div>
-                
-                <div class="form-group">
-                    <label>图片切换间隔: <span id="interval-value">${config.slideInterval}ms</span></label>
-                    <input type="range" class="form-control-range" id="mp-interval" min="500" max="10000" step="500" value="${config.slideInterval}">
-                    <input type="number" class="form-control mt-1" id="mp-interval-input" min="500" max="10000" step="500" value="${config.slideInterval}" style="width: 100px;">
-                    <span>ms</span>
-                </div>
-                
-                <div class="form-group">
-                    <label>媒体类型:</label>
-                    <select class="form-control" id="mp-media-type">
-                        <option value="mixed" ${config.mediaType === 'mixed' ? 'selected' : ''}>混合模式</option>
-                        <option value="image" ${config.mediaType === 'image' ? 'selected' : ''}>仅图片</option>
-                        <option value="video" ${config.mediaType === 'video' ? 'selected' : ''}>仅视频</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label>播放模式:</label>
-                    <select class="form-control" id="mp-play-mode">
-                        <option value="sequential" ${config.playMode === 'sequential' ? 'selected' : ''}>顺序播放</option>
-                        <option value="random" ${config.playMode === 'random' ? 'selected' : ''}>随机播放</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label><input type="checkbox" id="mp-muted" ${config.videoMuted ? 'checked' : ''}> 视频静音播放</label>
-                </div>
-                
-                <!-- URL管理区域 -->
-                <div class="form-group">
-                    <label>媒体URL管理</label>
-                    <div class="url-stats" id="url-stats">
-                        <div>总计: ${config.mediaUrls.length}个URL</div>
-                        <div>图片: ${imageUrls.length}个 | 视频: ${videoUrls.length}个 | 其他: ${otherUrls.length}个</div>
-                        <div id="validation-stats">点击"检测URL"验证可用性</div>
+                <div class="settings-content ${contentClass}" id="settings-content">
+                    <p style="color: #28a745; font-size: 12px;">✅ 插件加载成功 - 双击播放器切换下一个</p>
+                    <p style="color: #666; font-size: 11px;">📝 控制条显示规则：单击/双击视频区域显示，3秒后自动隐藏</p>
+                    <p style="color: #666; font-size: 11px;">🎛️ 进度条拖动：点击进度条任意位置或拖动滑块</p>
+                    <p style="color: #007bff; font-size: 11px;">📱 移动端优化：按钮50px，播放器自适应屏幕</p>
+                    
+                    <div class="form-group">
+                        <label><input type="checkbox" id="mp-enabled" ${config.enabled ? 'checked' : ''}> 启用播放器</label>
                     </div>
                     
-                    <div class="url-tabs">
-                        <div class="url-tab active" data-tab="all">全部URL</div>
-                        <div class="url-tab" data-tab="images">图片</div>
-                        <div class="url-tab" data-tab="videos">视频</div>
+                    <div class="form-group">
+                        <label>按钮位置:</label>
+                        <select class="form-control" id="mp-button-position">
+                            <option value="bottom-right" ${config.buttonPosition === 'bottom-right' ? 'selected' : ''}>右下角</option>
+                            <option value="bottom-left" ${config.buttonPosition === 'bottom-left' ? 'selected' : ''}>左下角</option>
+                            <option value="top-right" ${config.buttonPosition === 'top-right' ? 'selected' : ''}>右上角</option>
+                            <option value="top-left" ${config.buttonPosition === 'top-left' ? 'selected' : ''}>左上角</option>
+                        </select>
                     </div>
                     
-                    <div class="url-tab-content active" id="tab-all">
-                        <textarea class="form-control" id="mp-urls" rows="5" placeholder="每行一个URL" style="font-size: 12px;">${config.mediaUrls.join('\n')}</textarea>
+                    <div class="form-group">
+                        <label>播放器透明度: <span id="opacity-value">${Math.round(config.playerOpacity * 100)}%</span></label>
+                        <input type="range" class="form-control-range" id="mp-opacity" min="10" max="100" value="${config.playerOpacity * 100}">
+                        <input type="number" class="form-control mt-1" id="mp-opacity-input" min="10" max="100" value="${Math.round(config.playerOpacity * 100)}" style="width: 100px;">
+                        <span>%</span>
                     </div>
                     
-                    <div class="url-tab-content" id="tab-images">
-                        <textarea class="form-control" id="mp-urls-images" rows="3" placeholder="图片URL" style="font-size: 12px;">${imageUrls.join('\n')}</textarea>
+                    <div class="form-group">
+                        <label>控制条透明度: <span id="controls-opacity-value">${Math.round(config.controlsOpacity * 100)}%</span></label>
+                        <input type="range" class="form-control-range" id="mp-controls-opacity" min="10" max="100" value="${config.controlsOpacity * 100}">
+                        <input type="number" class="form-control mt-1" id="mp-controls-opacity-input" min="10" max="100" value="${Math.round(config.controlsOpacity * 100)}" style="width: 100px;">
+                        <span>%</span>
                     </div>
                     
-                    <div class="url-tab-content" id="tab-videos">
-                        <textarea class="form-control" id="mp-urls-videos" rows="3" placeholder="视频URL" style="font-size: 12px;">${videoUrls.join('\n')}</textarea>
+                    <div class="form-group">
+                        <label>播放器宽度: <span id="width-value">${config.playerWidth}px</span></label>
+                        <input type="range" class="form-control-range" id="mp-width" min="200" max="800" value="${config.playerWidth}">
+                        <input type="number" class="form-control mt-1" id="mp-width-input" min="200" max="800" value="${config.playerWidth}" style="width: 100px;">
+                        <span>px</span>
                     </div>
                     
-                    <div class="btn-group mt-2">
-                        <button class="btn btn-sm btn-info" id="mp-validate-urls">检测URL</button>
-                        <button class="btn btn-sm btn-warning" id="mp-clear-invalid">清除失效URL</button>
-                        <button class="btn btn-sm btn-success" id="mp-export-urls">导出URL</button>
+                    <div class="form-group">
+                        <label>图片切换间隔: <span id="interval-value">${config.slideInterval}ms</span></label>
+                        <input type="range" class="form-control-range" id="mp-interval" min="500" max="10000" step="500" value="${config.slideInterval}">
+                        <input type="number" class="form-control mt-1" id="mp-interval-input" min="500" max="10000" step="500" value="${config.slideInterval}" style="width: 100px;">
+                        <span>ms</span>
                     </div>
                     
-                    <!-- 改为输入框导入 -->
-                    <div class="mt-2">
-                        <label>批量导入URL:</label>
-                        <textarea class="form-control" id="mp-import-text" rows="3" placeholder="粘贴URL列表，每行一个URL，自动去重" style="font-size: 12px;"></textarea>
-                        <div class="btn-group mt-1 w-100">
-                            <button class="btn btn-sm btn-primary" id="mp-import-append">追加导入</button>
-                            <button class="btn btn-sm btn-danger" id="mp-import-replace">覆盖导入</button>
+                    <div class="form-group">
+                        <label>媒体类型:</label>
+                        <select class="form-control" id="mp-media-type">
+                            <option value="mixed" ${config.mediaType === 'mixed' ? 'selected' : ''}>混合模式</option>
+                            <option value="image" ${config.mediaType === 'image' ? 'selected' : ''}>仅图片</option>
+                            <option value="video" ${config.mediaType === 'video' ? 'selected' : ''}>仅视频</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>播放模式:</label>
+                        <select class="form-control" id="mp-play-mode">
+                            <option value="sequential" ${config.playMode === 'sequential' ? 'selected' : ''}>顺序播放</option>
+                            <option value="random" ${config.playMode === 'random' ? 'selected' : ''}>随机播放</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label><input type="checkbox" id="mp-muted" ${config.videoMuted ? 'checked' : ''}> 视频静音播放</label>
+                    </div>
+                    
+                    <!-- URL管理区域 -->
+                    <div class="form-group">
+                        <label>媒体URL管理</label>
+                        <div class="url-stats" id="url-stats">
+                            <div>总计: ${config.mediaUrls.length}个URL</div>
+                            <div>图片: ${imageUrls.length}个 | 视频: ${videoUrls.length}个 | 其他: ${otherUrls.length}个</div>
+                            <div id="validation-stats">点击"检测URL"验证可用性</div>
+                        </div>
+                        
+                        <div class="url-tabs">
+                            <div class="url-tab active" data-tab="all">全部URL</div>
+                            <div class="url-tab" data-tab="images">图片</div>
+                            <div class="url-tab" data-tab="videos">视频</div>
+                        </div>
+                        
+                        <div class="url-tab-content active" id="tab-all">
+                            <textarea class="form-control" id="mp-urls" rows="5" placeholder="每行一个URL" style="font-size: 12px;">${config.mediaUrls.join('\n')}</textarea>
+                        </div>
+                        
+                        <div class="url-tab-content" id="tab-images">
+                            <textarea class="form-control" id="mp-urls-images" rows="3" placeholder="图片URL" style="font-size: 12px;">${imageUrls.join('\n')}</textarea>
+                        </div>
+                        
+                        <div class="url-tab-content" id="tab-videos">
+                            <textarea class="form-control" id="mp-urls-videos" rows="3" placeholder="视频URL" style="font-size: 12px;">${videoUrls.join('\n')}</textarea>
+                        </div>
+                        
+                        <div class="btn-group mt-2">
+                            <button class="btn btn-sm btn-info" id="mp-validate-urls">检测URL</button>
+                            <button class="btn btn-sm btn-warning" id="mp-clear-invalid">清除失效URL</button>
+                            <button class="btn btn-sm btn-success" id="mp-export-urls">导出URL</button>
+                        </div>
+                        
+                        <!-- 改为输入框导入 -->
+                        <div class="mt-2">
+                            <label>批量导入URL:</label>
+                            <textarea class="form-control" id="mp-import-text" rows="3" placeholder="粘贴URL列表，每行一个URL，自动去重" style="font-size: 12px;"></textarea>
+                            <div class="btn-group mt-1 w-100">
+                                <button class="btn btn-sm btn-primary" id="mp-import-append">追加导入</button>
+                                <button class="btn btn-sm btn-danger" id="mp-import-replace">覆盖导入</button>
+                            </div>
                         </div>
                     </div>
+                    
+                    <div class="btn-group mt-3">
+                        <button class="btn btn-sm btn-success" id="mp-save">保存设置</button>
+                        <button class="btn btn-sm btn-primary" id="mp-test">测试播放</button>
+                        <button class="btn btn-sm btn-secondary" id="mp-reset-btn">重置按钮位置</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="mp-reset-player-pos">重置播放器位置</button>
+                    </div>
+                    
+                    <div id="mp-status" style="margin-top: 10px; font-size: 12px;"></div>
                 </div>
-                
-                <div class="btn-group mt-3">
-                    <button class="btn btn-sm btn-success" id="mp-save">保存设置</button>
-                    <button class="btn btn-sm btn-primary" id="mp-test">测试播放</button>
-                    <button class="btn btn-sm btn-secondary" id="mp-reset-btn">重置按钮位置</button>
-                    <button class="btn btn-sm btn-outline-secondary" id="mp-reset-player-pos">重置播放器位置</button>
-                </div>
-                
-                <div id="mp-status" style="margin-top: 10px; font-size: 12px;"></div>
             </div>
         `;
         
@@ -1669,7 +1742,38 @@
         console.log('✅ 设置面板创建完成');
     }
     
+    // 切换设置面板折叠状态
+    function toggleSettingsPanel() {
+        config.settingsCollapsed = !config.settingsCollapsed;
+        saveConfig();
+        
+        const header = document.getElementById('settings-header');
+        const content = document.getElementById('settings-content');
+        const toggle = document.querySelector('.settings-toggle');
+        
+        if (header && content && toggle) {
+            if (config.settingsCollapsed) {
+                content.classList.remove('expanded');
+                content.classList.add('collapsed');
+                toggle.textContent = '▶';
+                toggle.classList.add('collapsed');
+                header.querySelector('span').textContent = '点击展开';
+            } else {
+                content.classList.remove('collapsed');
+                content.classList.add('expanded');
+                toggle.textContent = '▼';
+                toggle.classList.remove('collapsed');
+                header.querySelector('span').textContent = '点击折叠';
+            }
+        }
+    }
+    
     function bindSettingsEvents() {
+        // 设置面板折叠/展开
+        $('#settings-header').on('click', function() {
+            toggleSettingsPanel();
+        });
+        
         // 启用开关
         $('#mp-enabled').on('change', function() {
             config.enabled = this.checked;
@@ -1973,13 +2077,13 @@
         if (statusEl) {
             statusEl.textContent = message;
             statusEl.style.color = type === 'error' ? '#dc3545' : '#28a745';
-            setTimeout(() => statusEl.textContent = '', 3000);
+                        setTimeout(() => statusEl.textContent = '', 3000);
         }
     }
     
     // 初始化
     function initialize() {
-        console.log('🔧 初始化修复手机端双击切换问题版播放器...');
+        console.log('🔧 初始化优化设置面板可折叠收缩版播放器...');
         
         // 首先加载CSS
         loadCSS();
@@ -1994,7 +2098,7 @@
             createPlayer();
         });
         
-        console.log('✅ 修复手机端双击切换问题版播放器初始化完成');
+        console.log('✅ 优化设置面板可折叠收缩版播放器初始化完成');
     }
     
     // 启动
