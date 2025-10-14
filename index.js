@@ -1,4 +1,4 @@
-// index.js - 优化设置面板可折叠收缩版
+// index.js - 优化设置面板可折叠收缩版（移除标题前箭头）
 (function() {
     console.log('🎵 优化设置面板可折叠收缩版媒体播放器加载...');
     
@@ -1164,7 +1164,7 @@
         }
         
         const x = Math.max(0, Math.min(window.innerWidth - player.offsetWidth, clientX - playerDragOffset.x));
-               const y = Math.max(0, Math.min(window.innerHeight - player.offsetHeight, clientY - playerDragOffset.y));
+              const y = Math.max(0, Math.min(window.innerHeight - player.offsetHeight, clientY - playerDragOffset.y));
         
         player.style.left = x + 'px';
         player.style.top = y + 'px';
@@ -1582,7 +1582,7 @@
         }
     }
     
-    // 创建设置面板 - 添加折叠功能
+    // 创建设置面板 - 移除标题前箭头
     function createSettingsPanel() {
         const extensionsArea = document.getElementById('extensions_settings');
         if (!extensionsArea) {
@@ -1599,16 +1599,12 @@
         const otherUrls = config.mediaUrls.filter(url => !isImageUrl(url) && !isVideoUrl(url));
         
         const isCollapsed = config.settingsCollapsed;
-        const toggleIcon = isCollapsed ? '▶' : '▼';
         const contentClass = isCollapsed ? 'collapsed' : 'expanded';
         
         const html = `
             <div class="list-group-item" id="media-player-settings">
                 <div class="settings-header" id="settings-header">
-                    <h5>
-                        <span class="settings-toggle ${isCollapsed ? 'collapsed' : ''}">${toggleIcon}</span>
-                        🎵 媒体播放器 v${PLUGIN_VERSION}
-                    </h5>
+                    <h5>🎵 媒体播放器 v${PLUGIN_VERSION}</h5>
                     <span style="font-size: 12px; color: #666;">${isCollapsed ? '点击展开' : '点击折叠'}</span>
                 </div>
                 
@@ -1749,20 +1745,15 @@
         
         const header = document.getElementById('settings-header');
         const content = document.getElementById('settings-content');
-        const toggle = document.querySelector('.settings-toggle');
         
-        if (header && content && toggle) {
+        if (header && content) {
             if (config.settingsCollapsed) {
                 content.classList.remove('expanded');
                 content.classList.add('collapsed');
-                toggle.textContent = '▶';
-                toggle.classList.add('collapsed');
                 header.querySelector('span').textContent = '点击展开';
             } else {
                 content.classList.remove('collapsed');
                 content.classList.add('expanded');
-                toggle.textContent = '▼';
-                toggle.classList.remove('collapsed');
                 header.querySelector('span').textContent = '点击折叠';
             }
         }
@@ -2077,7 +2068,7 @@
         if (statusEl) {
             statusEl.textContent = message;
             statusEl.style.color = type === 'error' ? '#dc3545' : '#28a745';
-                        setTimeout(() => statusEl.textContent = '', 3000);
+            setTimeout(() => statusEl.textContent = '', 3000);
         }
     }
     
@@ -2092,7 +2083,7 @@
         createPlayer();
         createSettingsPanel();
         
-        // 窗口大小变化时重新定位
+                // 窗口大小变化时重新定位
         window.addEventListener('resize', function() {
             console.log('🔄 窗口大小变化，重新创建播放器');
             createPlayer();
